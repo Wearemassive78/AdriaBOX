@@ -122,3 +122,10 @@ The system is designed to run using Docker Compose:
 
 ```bash
 docker-compose up --build
+```
+## 📬 Contacts
+
+For any inquiries, collaborations, or academic discussions:
+
+📧 Sajmir Buzi → sajmir.buzi@studio.unibo.it
+📧 Massimiliano Pupillo → massimiliano.pupillo@studio.unibo.it
