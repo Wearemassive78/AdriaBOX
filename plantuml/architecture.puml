@@ -1,0 +1,12 @@
+@startuml
+title AdriaBOX Architecture
+package "Client" {
+}
+package "Metadata Server" {
+}
+package "Storage Nodes" {
+}
+Client --> "Metadata Server" : register / query metadata
+Client --> "Storage Nodes" : upload / download chunks (TCP)
+"Metadata Server" --> "Storage Nodes" : assign replicas
+@enduml

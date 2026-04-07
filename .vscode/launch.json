@@ -1,0 +1,27 @@
+
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run Metadata Server",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/metadata_server/server.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Run Storage Node",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/storage_node/node.py",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Run Client",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/src/client/client.py",
+            "console": "integratedTerminal"
+        }
+    ]
+}

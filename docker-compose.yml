@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  metadata:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: python src/metadata_server/server.py
+    ports:
+      - "5000:5000"
+
+  storage1:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: python src/storage_node/node.py --http-port 6001 --tcp-port 7001
+    ports:
+      - "6001:6001"
+      - "7001:7001"
