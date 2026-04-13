@@ -1,0 +1,47 @@
+@startuml AdriaBOX_Fault_Tolerance_Sequence
+!theme plain
+skinparam sequenceMessageAlign center
+
+title AdriaBOX - Fault Tolerance & Dynamic Replication (Zoom Level 1)
+
+participant "Metadata Server" as server
+database "SQLite DB" as db
+participant "Storage Node A\n(Crashes)" as nodeA
+participant "Storage Node B\n(Replica Holder)" as nodeB
+participant "Storage Node C\n(New Target)" as nodeC
+
+== Normal Operation (Heartbeats) ==
+
+nodeA -> server : 1. Heartbeat (I am alive)
+nodeB -> server : 2. Heartbeat (I am alive)
+nodeC -> server : 3. Heartbeat (I am alive)
+
+== Failure Detection ==
+
+note over nodeA : Node A suddenly crashes\nor loses network connection
+nodeA x-> server : 4. (Heartbeat Missing)
+
+server -> server : 5. Timeout Triggered (e.g., 10 seconds)
+
+server -> db : 6. Update state: Mark Node A as OFFLINE\nQuery: Find under-replicated chunks
+activate db
+db --> server : 7. Result: Chunk1 needs replication\n(Surviving replica is on Node B)
+deactivate db
+
+== Dynamic Replication (Auto-Healing) ==
+
+server -> nodeB : 8. Command: Replicate Chunk1 to Node C
+activate nodeB
+
+nodeB -> nodeC : 9. TCP Connect & Send Chunk1 (Binary)
+activate nodeC
+nodeC -> nodeC : 10. Write to Docker Volume
+nodeC --> nodeB : 11. TCP ACK (Saved)
+deactivate nodeC
+
+nodeB --> server : 12. 200 OK (Replication Successful)
+deactivate nodeB
+
+server -> db : 13. Update Index (Chunk1 is now on B and C)
+
+@enduml
