@@ -1,0 +1,51 @@
+@startuml AdriaBOX_Upload_Sequence
+!theme plain
+skinparam sequenceMessageAlign center
+
+title AdriaBOX - File Upload Sequence (Zoom Level 1)
+
+actor "Client (CLI)" as client
+participant "Metadata Server" as server
+database "SQLite DB" as db
+participant "Storage Node A" as nodeA
+participant "Storage Node B" as nodeB
+
+client -> client : 1. Split file into chunks (e.g., 1MB each)
+
+== Metadata Phase (REST API) ==
+
+client -> server : 2. POST /api/upload (filename, num_chunks)
+activate server
+
+server -> db : 3. Check available nodes & allocate
+activate db
+db --> server : 4. Allocation Map (Chunk1->NodeA, Chunk2->NodeB)
+deactivate db
+
+server --> client : 5. 200 OK (Returns Allocation Map)
+deactivate server
+
+== Data Transfer Phase (TCP Sockets) ==
+
+client -> nodeA : 6. TCP Connect & Send Chunk 1 (Binary Data)
+activate nodeA
+nodeA -> nodeA : 7. Write to Docker Volume
+nodeA --> client : 8. TCP ACK (Chunk 1 saved)
+deactivate nodeA
+
+client -> nodeB : 9. TCP Connect & Send Chunk 2 (Binary Data)
+activate nodeB
+nodeB -> nodeB : 10. Write to Docker Volume
+nodeB --> client : 11. TCP ACK (Chunk 2 saved)
+deactivate nodeB
+
+== Finalization ==
+
+client -> server : 12. POST /api/upload/complete (filename)
+activate server
+server -> db : 13. Update index (Mark file as AVAILABLE)
+server --> client : 14. 200 OK (Upload Successful)
+deactivate server
+
+@enduml
+
