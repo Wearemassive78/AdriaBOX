@@ -1,9 +1,12 @@
 """Common utilities shared across components.
+
+Import specific submodules where needed, e.g. `from common.tcp import send_file`.
 """
-from .constants import CHUNK_SIZE, DEFAULT_METADATA_URL, DEFAULT_NODE_HOST, DEFAULT_NODE_TCP_PORT
-from .tcp import send_file, handle_connection
 
 __all__ = [
-    'CHUNK_SIZE', 'DEFAULT_METADATA_URL', 'DEFAULT_NODE_HOST', 'DEFAULT_NODE_TCP_PORT',
-    'send_file', 'handle_connection'
+    'config',
+    'constants',
+    'models',
+    'chunking',
+    'tcp',
 ]
