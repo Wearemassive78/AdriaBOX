@@ -10,23 +10,9 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 def handle_tcp_client(conn, addr, storage_dir=DATA_DIR):
-    # Very simple protocol: first line is filename, rest is data
-    try:
-        with conn:
-            header = conn.recv(1024)
-            if not header:
-                return
-            # header is filename
-            filename = header.decode('utf-8').strip()
-            out_path = os.path.join(storage_dir, filename)
-            with open(out_path, 'wb') as f:
-                while True:
-                    chunk = conn.recv(4096)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-    except Exception:
-        pass
+    # Delegate to common handler to keep protocol consistent
+    from common.tcp import handle_connection
+    return handle_connection(conn, storage_dir)
 
 def run_tcp_server(host, port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
