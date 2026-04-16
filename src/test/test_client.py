@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock, mock_open
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'client'))
+sys.path.insert(1, os.path.join(os.path.dirname(__file__), '..'))
 from client import send_file_to_node, register_metadata
 
 
