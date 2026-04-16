@@ -9,4 +9,5 @@ __all__ = [
     'models',
     'chunking',
     'tcp',
+    'hash',
 ]
