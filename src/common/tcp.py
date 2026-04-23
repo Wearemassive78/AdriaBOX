@@ -4,26 +4,32 @@ Provides `send_file` for clients and `handle_connection` for storage nodes.
 """
 import os
 import socket
+import struct
 from .constants import CHUNK_SIZE
 
 
 def send_file(host, port, filename):
-    """Send a file to a storage node.
-
-    Protocol: first packet is the basename followed by a newline, remaining
-    data is the file bytes.
-    """
     s = socket.socket()
     s.connect((host, port))
-    s.sendall((os.path.basename(filename) + '\n').encode('utf-8'))
+
+
+    basename = os.path.basename(filename).encode('utf-8')
+    name_len = len(basename)
+
+    file_size = os.path.getsize(filename)
+    
+    header = struct.pack('>I', name_len) + basename + struct.pack('>Q', file_size)
+    
+    s.sendall(header)
+    
     with open(filename, 'rb') as f:
         while True:
             chunk = f.read(CHUNK_SIZE)
             if not chunk:
                 break
             s.sendall(chunk)
+            
     s.close()
-
 
 def handle_connection(conn, storage_dir):
     """Handle an incoming connection: read filename header then stream to disk."""
