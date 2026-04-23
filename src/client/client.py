@@ -21,7 +21,7 @@ if __name__ == '__main__':
     parser.add_argument('--node-tcp-port', type=int, default=DEFAULT_NODE_TCP_PORT)
     args = parser.parse_args()
     # naive single-node upload
-    info = register_metadata(args.metadata, os.path.basename(args.file), chunks=1)
-    print('Registered metadata:', info)
+    #info = register_metadata(args.metadata, os.path.basename(args.file), chunks=1)
+    #print('Registered metadata:', info)
     send_file_to_node(args.node_host, args.node_tcp_port, args.file)
     print('File sent to storage node')
