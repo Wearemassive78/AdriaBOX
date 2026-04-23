@@ -35,15 +35,17 @@ def store_metadata():
     data = request.json or {}
     filename = data.get('filename')
     chunks = int(data.get('chunks', 1))
-    if not filename:
-        return jsonify({'error': 'filename required'}), 400
+    
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+    
     cur.execute('INSERT INTO files (filename, chunks, created_at) VALUES (?, ?, ?)',
                 (filename, chunks, datetime.utcnow().isoformat()))
+    
     fid = cur.lastrowid
     conn.commit()
     conn.close()
+    
     return jsonify({'id': fid, 'filename': filename}), 201
 
 @app.route('/files', methods=['GET'])
