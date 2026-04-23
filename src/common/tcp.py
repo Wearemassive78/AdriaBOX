@@ -7,7 +7,16 @@ import socket
 import struct
 from .constants import CHUNK_SIZE
 
-
+def recv_exact(conn, n):
+    """Legge esattamente n byte dalla socket."""
+    data = bytearray()
+    while len(data) < n:
+        packet = conn.recv(n - len(data))
+        if not packet:
+            return None # Connessione chiusa prematuramente
+        data.extend(packet)
+    return bytes(data)
+     
 def send_file(host, port, filename):
     s = socket.socket()
     s.connect((host, port))
@@ -32,23 +41,35 @@ def send_file(host, port, filename):
     s.close()
 
 def handle_connection(conn, storage_dir):
-    """Handle an incoming connection: read filename header then stream to disk."""
+    """Handle an entry connection reading the binary file."""
     try:
         with conn:
-            header = conn.recv(1024)
-            if not header:
+            raw_name_len = recv_exact(conn, 4)
+            if not raw_name_len:
                 return
-            filename = header.decode('utf-8', errors='ignore').strip()
+            name_len = struct.unpack('>I', raw_name_len)[0]
+
+            raw_name = recv_exact(conn, name_len)
+            filename = raw_name.decode('utf-8')
+
+            raw_file_size = recv_exact(conn, 8)
+            file_size = struct.unpack('>Q', raw_file_size)[0]
+
             out_path = os.path.join(storage_dir, filename)
             os.makedirs(os.path.dirname(out_path) or '.', exist_ok=True)
+
+            bytes_received = 0
             with open(out_path, 'wb') as f:
-                while True:
-                    chunk = conn.recv(CHUNK_SIZE)
+                while bytes_received < file_size:
+                    bytes_to_read = min(CHUNK_SIZE, file_size - bytes_received)
+                    chunk = conn.recv(bytes_to_read)
                     if not chunk:
                         break
                     f.write(chunk)
-    except Exception:
-        # keep handler robust for simple demo usage
+                    bytes_received += len(chunk)
+                    
+    except Exception as e:
+        print(f"TCP connection error: {e}")
         return
 
 
