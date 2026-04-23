@@ -1,0 +1,44 @@
+@startuml AdriaBOX_Download_Sequence
+!theme plain
+skinparam sequenceMessageAlign center
+
+title AdriaBOX - File Download Sequence (Zoom Level 1)
+
+actor "Client (CLI)" as client
+participant "Metadata Server" as server
+database "SQLite DB" as db
+participant "Storage Node A" as nodeA
+participant "Storage Node B" as nodeB
+
+== Metadata Request Phase (REST API) ==
+
+client -> server : 1. GET /api/download/{filename}
+activate server
+
+server -> db : 2. Lookup file chunks & locations
+activate db
+db --> server : 3. Allocation Map (Chunk1->NodeA, Chunk2->NodeB)
+deactivate db
+
+server --> client : 4. 200 OK (Returns Allocation Map)
+deactivate server
+
+== Data Fetching Phase (TCP Sockets) ==
+
+client -> nodeA : 5. TCP Connect & Request Chunk 1
+activate nodeA
+nodeA -> nodeA : 6. Read from Docker Volume
+nodeA --> client : 7. Send Chunk 1 (Binary Data)
+deactivate nodeA
+
+client -> nodeB : 8. TCP Connect & Request Chunk 2
+activate nodeB
+nodeB -> nodeB : 9. Read from Docker Volume
+nodeB --> client : 10. Send Chunk 2 (Binary Data)
+deactivate nodeB
+
+== Finalization ==
+
+client -> client : 11. Reassemble chunks into original file
+
+@enduml
