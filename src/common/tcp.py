@@ -7,7 +7,16 @@ import socket
 import struct
 from .constants import CHUNK_SIZE
 
-
+def recv_exact(conn, n):
+    """Legge esattamente n byte dalla socket."""
+    data = bytearray()
+    while len(data) < n:
+        packet = conn.recv(n - len(data))
+        if not packet:
+            return None # Connessione chiusa prematuramente
+        data.extend(packet)
+    return bytes(data)
+     
 def send_file(host, port, filename):
     s = socket.socket()
     s.connect((host, port))
