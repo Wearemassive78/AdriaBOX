@@ -1,0 +1,1 @@
+prova di invio dati con notifica al server
