@@ -1,0 +1,31 @@
+@startuml
+title Sequence Diagram: Metadata Operations (mkdir, ls, mv)
+
+actor Client
+participant "Metadata Server\n(Master)" as Master
+
+== Directory Creation (mkdir) ==
+Client -> Master: Request Mkdir (Path, Auth Token)
+activate Master
+Master -> Master: Validate Token
+Master -> Master: Insert new directory record in DB
+Master --> Client: 201 Created
+deactivate Master
+
+== List Contents (ls) ==
+Client -> Master: Request List (Path, Auth Token)
+activate Master
+Master -> Master: Validate Token
+Master -> Master: Query DB for files/folders in Path
+Master --> Client: 200 OK (List of contents & metadata)
+deactivate Master
+
+== Move/Rename (mv) ==
+Client -> Master: Request Move (Source Path, Dest Path, Auth Token)
+activate Master
+Master -> Master: Validate Token
+Master -> Master: Update DB record (Change parent ID or name)
+Master --> Client: 200 OK (Move successful)
+deactivate Master
+
+@enduml
