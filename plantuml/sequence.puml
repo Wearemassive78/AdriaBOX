@@ -1,7 +1,0 @@
-@startuml
-title Store File Sequence
-Client -> MetadataServer: POST /store (filename, chunks)
-MetadataServer -> Client: 201 Created (id)
-Client -> StorageNode: TCP connect, send filename + chunk
-StorageNode -> Client: close
-@enduml
