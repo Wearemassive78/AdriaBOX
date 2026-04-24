@@ -1,0 +1,48 @@
+@startuml
+title Sequence Diagram: File Upload (with Pipeline Replication)
+
+actor Client
+participant "Metadata Server\n(Master)" as Master
+participant "Storage Node A\n(Primary)" as SN_A
+participant "Storage Node B\n(Replica)" as SN_B
+participant "Storage Node C\n(Replica)" as SN_C
+
+== 1. Authorization & Allocation ==
+Client -> Master: Request Upload (Filename, Size, Auth Token)
+activate Master
+Master -> Master: Validate Token\n& Check Quota
+Master -> Master: Calculate Chunks\n& Select 3 Storage Nodes
+Master --> Client: Authorized (FileID, Chunk 1 -> Nodes: A, B, C)
+deactivate Master
+
+== 2. Data Transfer (TCP Binary Stream) ==
+note over Client, SN_A: TCP connection opens
+Client -> SN_A: Send Chunk 1 Data + Replica List (B, C)
+activate SN_A
+
+note over SN_A, SN_B: Pipeline forwarding
+SN_A -> SN_B: Forward Chunk 1 Data + Replica List (C)
+activate SN_B
+
+SN_B -> SN_C: Forward Chunk 1 Data
+activate SN_C
+note over SN_C: Saves to Disk
+SN_C --> SN_B: ACK (Saved)
+deactivate SN_C
+
+note over SN_B: Saves to Disk
+SN_B --> SN_A: ACK (Saved & Replicated)
+deactivate SN_B
+
+note over SN_A: Saves to Disk
+SN_A --> Client: ACK (Chunk 1 Uploaded to all 3 nodes)
+deactivate SN_A
+
+== 3. Metadata Commit ==
+Client -> Master: Confirm Upload Complete (FileID)
+activate Master
+Master -> Master: Commit to Database\n(File status: Available)
+Master --> Client: 200 OK (File visible in cluster)
+deactivate Master
+
+@enduml

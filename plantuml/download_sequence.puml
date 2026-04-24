@@ -1,0 +1,33 @@
+@startuml
+title Sequence Diagram: File Download (with Fault Tolerance)
+
+actor Client
+participant "Metadata Server\n(Master)" as Master
+participant "Storage Node A\n(Offline/Crashed)" as SN_A
+participant "Storage Node B\n(Replica)" as SN_B
+
+== 1. Metadata Query ==
+Client -> Master: Request Download (Filename, Auth Token)
+activate Master
+Master -> Master: Validate Token & Check Permissions
+Master -> Master: Lookup FileID and Chunk Locations
+Master --> Client: 200 OK (List of Chunks & Node IPs: A, B, C)
+deactivate Master
+
+== 2. Fault Tolerant Data Retrieval ==
+note over Client, SN_A: Client tries the first Node on the list
+Client -> SN_A: TCP connect (Request Chunk 1)
+activate SN_A
+note over SN_A: Node is offline or network is down!
+SN_A --X Client: Connection Timeout / Error
+deactivate SN_A
+
+note over Client: Client detects failure,\nmoves to next replica in list
+Client -> SN_B: TCP connect (Request Chunk 1)
+activate SN_B
+SN_B --> Client: Send Chunk 1 Data (TCP Binary Stream)
+deactivate SN_B
+
+note over Client: Client successfully receives\ndata and reassembles the file.
+
+@enduml

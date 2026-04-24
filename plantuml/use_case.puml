@@ -1,0 +1,52 @@
+@startuml
+left to right direction
+
+actor "User (Client)" as user
+actor "Admin" as admin
+
+' L'admin eredita tutte le capacità dell'utente normale
+admin -|> user 
+
+rectangle AdriaBOX {
+  ' Authentication (In alto)
+  usecase "Register Account" as UC_Register
+  usecase "Login" as UC_Login
+  usecase "Logout" as UC_Logout
+
+  ' File Operations
+  usecase "Upload File" as UC_Upload
+  usecase "Download File" as UC_Download
+  usecase "Delete File" as UC_Delete
+  usecase "Move/Rename File" as UC_MoveFile
+
+  ' Directory Operations
+  usecase "Create Directory" as UC_Mkdir
+  usecase "Delete Directory" as UC_Rmdir
+  usecase "Move/Rename Directory" as UC_MoveDir
+  usecase "List Directory Contents" as UC_List
+
+  ' System Operations
+  usecase "Check Personal Quota & Status" as UC_Status
+  usecase "Check Global Cluster Status" as UC_AdminStatus
+}
+
+user --> UC_Register
+user --> UC_Login
+user --> UC_Logout
+
+user --> UC_Upload
+user --> UC_Download
+user --> UC_Delete
+user --> UC_MoveFile
+
+user --> UC_Mkdir
+user --> UC_Rmdir
+user --> UC_MoveDir
+user --> UC_List
+
+user --> UC_Status
+
+' L'admin ha accesso al caso d'uso privilegiato
+admin --> UC_AdminStatus
+
+@enduml
