@@ -14,6 +14,14 @@ def register_metadata(metadata_url, filename, chunks=1):
     r.raise_for_status()
     return r.json()
 
+def upload_file_to_metadata(metadata_url, filepath):
+    """Uploads the actual file to the metadata server's /upload endpoint."""
+    with open(filepath, 'rb') as fh:
+        files = {'file': (os.path.basename(filepath), fh)}
+        r = requests.post(f"{metadata_url}/upload", files=files)
+    r.raise_for_status()
+    return r.json()
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--file', required=True)
@@ -21,8 +29,12 @@ if __name__ == '__main__':
     parser.add_argument('--node-host', default=DEFAULT_NODE_HOST)
     parser.add_argument('--node-tcp-port', type=int, default=DEFAULT_NODE_TCP_PORT)
     args = parser.parse_args()
-    # naive single-node upload
-    #info = register_metadata(args.metadata, os.path.basename(args.file), chunks=1)
-    #print('Registered metadata:', info)
+    # Upload file to metadata server (saves file and registers metadata)
+    try:
+        info = upload_file_to_metadata(args.metadata, args.file)
+        print('Metadata server saved file:', info)
+    except Exception as e:
+        print('Warning: failed to upload to metadata server:', e)
+    # naive single-node upload to storage node
     send_file_to_node(args.node_host, args.node_tcp_port, args.file)
     print('File sent to storage node')

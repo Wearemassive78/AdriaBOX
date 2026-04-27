@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import sqlite3
 import os
 from datetime import datetime
+from werkzeug.utils import secure_filename
 
 # Setup paths for the database
 BASE_DIR = os.path.dirname(__file__)
@@ -53,6 +54,34 @@ def store_metadata():
     conn.close() # Fixed: Ensure connection is closed inside the function
     
     return jsonify({'id': fid, 'filename': filename}), 201
+
+
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    """Accepts a file upload, saves it to disk and registers metadata."""
+    if 'file' not in request.files:
+        return jsonify({'error': 'file field is required'}), 400
+
+    f = request.files['file']
+    if f.filename == '':
+        return jsonify({'error': 'filename required'}), 400
+
+    filename = secure_filename(f.filename)
+    save_dir = os.path.join(BASE_DIR, 'data')
+    os.makedirs(save_dir, exist_ok=True)
+    save_path = os.path.join(save_dir, filename)
+    f.save(save_path)
+
+    # register metadata entry in the database
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute('INSERT INTO files (filename, chunks, created_at) VALUES (?, ?, ?)',
+                (filename, 1, datetime.utcnow().isoformat()))
+    fid = cur.lastrowid
+    conn.commit()
+    conn.close()
+
+    return jsonify({'id': fid, 'filename': filename, 'path': save_path}), 201
 
 @app.route('/files', methods=['GET'])
 def list_files():

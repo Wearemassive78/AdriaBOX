@@ -5,3 +5,4 @@ CREATE TABLE IF NOT EXISTS files (
   chunks INTEGER NOT NULL,
   created_at TEXT NOT NULL
 );
+
