@@ -6,6 +6,7 @@ import requests
 import socket
 from common.tcp import send_file
 from common.constants import DEFAULT_METADATA_URL, DEFAULT_NODE_HOST, DEFAULT_NODE_TCP_PORT
+from client.interactive import run_interactive
 def send_file_to_node(host, port, filename):
     return send_file(host, port, filename)
 
