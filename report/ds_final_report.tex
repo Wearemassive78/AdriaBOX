@@ -1,0 +1,39 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{cleveref}
+
+\title{AdriaBOX\\ \large Final Report for the Distributed Systems Course}
+\author{
+  Sajmir Buzi \\ \texttt{sajmir.buzi@studio.unibo.it}
+  \and
+  Massimiliano Pupillo \\ \texttt{massimiliano.pupillo@studio.unibo.it}
+}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+AdriaBOX is a decentralized data storage system characterized by an architecture with dynamic data replication on nodes and an architecture resilient to the failure of the nodes themselves. Relying on a decoupled network composed of a central metadata server and multiple independent storage nodes, the system provides users with a secure system featuring a command-line interface to upload, retrieve, and manage files on a distributed cluster.
+\end{abstract}
+
+\section{Concept and Architectural Motivation}
+AdriaBOX is designed as a robust and distributed command-line application (CLI) for efficient file management. Moving away from traditional monolithic storage solutions, the project adopts a Master-Worker architecture. The system abstracts the complexity of data distribution, allowing users to interact with their remote workspace seamlessly through a local terminal, while the underlying infrastructure orchestrates data routing and storage.
+
+The need for a distributed approach is deeply rooted in two main architectural goals: fault tolerance and resource sharing. By systematically partitioning incoming files into manageable chunks and replicating them across multiple nodes, AdriaBOX guarantees high reliability. This replication strategy ensures that an unexpected failure or disconnection of individual storage components does not result in data loss or service interruption. Furthermore, this distributed setup allows the system to aggregate the physical storage capacity of disparate machines, effectively presenting a unified and scalable virtual drive transparent to the end users.
+
+From the perspective of user interaction, the system is designed to support multiple roles, strictly isolating administrative tasks from standard operations. While standard users continuously interact with the CLI to synchronize, add, delete, or backup their data, administrators are provided with dedicated tools to monitor global health, capacity, and the distribution of active nodes.
+
+\section{Requirements Elicitation and Analysis}
+The development of AdriaBOX is driven by a comprehensive set of functional and non-functional requirements designed to fully exploit the characteristics of distributed computing. 
+
+From a functional perspective, the system establishes a secure environment through robust and secure authentication protocols. User interactions are protected by cryptographic password hashing and stateless session tokens, ensuring security in multi-tenant isolation. Core functionalities allow users to perform standard file system operations, such as uploading, downloading, renaming, and deleting resources. Behind the scenes, the system handles the heavy lifting: chunk-processing binary data, calculating optimal storage node allocations, and executing data transfers via low-level TCP socket connections.
+
+Non-functional requirements dictate the system's behavior during infrastructure degradation: positioned within the limits of the CAP theorem, AdriaBOX is explicitly designed to prioritize consistency over availability during network partitions. In practice, this means that the system will temporarily prevent read or write operations rather than serving corrupted data, or incomplete or outdated file fragments.
+
+Finally, strict implementation constraints were defined to validate the engineering effort. The entire ecosystem is developed in Python, avoiding heavy external web frameworks in favor of custom low-level socket programming for data transfer. To ensure reproducibility and facilitate comprehensive failure testing, the entire cluster—comprising the client, the orchestrator, its persistent SQL state, and the storage workers—is fully containerized and orchestrated via Docker. This approach not only simplifies deployment but also allows accurate simulations of network partitioning and node crashes in a controlled environment.
+
+\end{document}
