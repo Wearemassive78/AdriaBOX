@@ -1,0 +1,37 @@
+@startuml
+title Deployment Diagram: AdriaBOX Simulation Environment (Docker Compose)
+
+node "Client Machine (User Host OS)" as ClientHost {
+  component "AdriaBOX CLI\n(Python Application)" as CLI
+}
+
+node "Docker Engine (Cluster Simulation)" as DockerHost {
+
+  folder "Docker Bridge Network (Virtual LAN)" {
+    
+    node "Metadata Container" as MasterContainer {
+      component "Metadata Server\n(Python)" as Master
+    }
+
+    database "Database Container" as DBContainer {
+      component "SQL Engine\n(e.g., PostgreSQL)" as DB
+      storage "DB Volume\n(Persistent State)" as DBVol
+      DB --> DBVol : reads/writes
+    }
+
+    node "Storage Node Container (x12)" as StorageContainer {
+      component "Storage Worker\n(Python)" as StorageNode
+      storage "Disk Volume\n(File Chunks)" as DiskVol
+      StorageNode --> DiskVol : reads/writes
+    }
+  }
+}
+
+' Network Communications
+CLI --> Master : "1. Request Metadata/Auth\n(REST API)"
+CLI --> StorageNode : "2. Transfer Data\n(TCP Sockets)"
+Master --> DB : "State Tracking\n(SQL, Port 5432)"
+StorageNode --> Master : "Heartbeat / Status\n(TCP/REST)"
+StorageNode --> StorageNode : "Replication Pipeline\n(TCP Sockets)"
+
+@enduml

@@ -1,0 +1,36 @@
+@startuml
+title Sequence Diagram: Authentication Flow (Register & Login)
+
+actor User
+participant "Client (CLI)" as Client
+participant "Metadata Server\n(Master)" as Master
+
+== 1. User Registration ==
+User -> Client: Type 'adria register <user> <pass>'
+activate Client
+Client -> Master: Request Register (Username, Plain Password)
+activate Master
+Master -> Master: Check if Username exists
+note right of Master: Security Rule:\nApply Cryptographic Hash\n(e.g., bcrypt) to password
+Master -> Master: Save (Username, Hashed Password) to DB
+Master --> Client: 201 Created (User registered)
+deactivate Master
+Client --> User: "Registration successful. Please login."
+deactivate Client
+
+== 2. User Login & Token Generation ==
+User -> Client: Type 'adria login <user> <pass>'
+activate Client
+Client -> Master: Request Login (Username, Plain Password)
+activate Master
+Master -> Master: Fetch Hashed Password from DB
+Master -> Master: Compare Hashes
+note right of Master: If match, generate\nstateless JWT Token
+Master --> Client: 200 OK (Auth Token)
+deactivate Master
+
+note over Client: Store Token locally\n(e.g., in memory or hidden config)
+Client --> User: "Login successful. Session active."
+deactivate Client
+
+@enduml
