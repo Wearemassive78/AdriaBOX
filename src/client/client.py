@@ -2,6 +2,10 @@ import argparse
 import requests
 import socket
 import os
+import sys
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from common.tcp import send_file
 from common.constants import DEFAULT_METADATA_URL, DEFAULT_NODE_HOST, DEFAULT_NODE_TCP_PORT
 
