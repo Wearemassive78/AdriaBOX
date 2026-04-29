@@ -1,103 +1,84 @@
 from flask import Flask, request, jsonify
-import sqlite3
-import os
-from datetime import datetime
-from werkzeug.utils import secure_filename
+import jwt
+import datetime
+from metadata_server.db import DatabaseManager
 
-# Setup paths for the database
-BASE_DIR = os.path.dirname(__file__)
-DB_PATH = os.path.join(BASE_DIR, 'metadata.db')
+class AdriaServer:
+    """Master Node Web Server handling REST API requests."""
 
-app = Flask(__name__)
+    def __init__(self, db_path="metadata.db", secret_key="super-secret-master-key"):
+        """
+        Initializes the Flask application and the Database connection.
+        """
+        self.app = Flask(__name__)
+        self.db = DatabaseManager(db_path)
+        
+        # This key is used to cryptographically sign the JWT tokens.
+        # In a real production environment, this should be an environment variable.
+        self.secret_key = secret_key
+        
+        # Mapping URLs to class methods (similar to mapping function pointers in C)
+        self.app.add_url_rule('/health', view_func=self.health, methods=['GET'])
+        self.app.add_url_rule('/register', view_func=self.register, methods=['POST'])
+        self.app.add_url_rule('/login', view_func=self.login, methods=['POST'])
 
-def init_db():
-    """Initializes the SQLite database and creates the files table if it doesn't exist."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    # In C, this is equivalent to executing a statement with sqlite3_exec()
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT NOT NULL,
-            chunks INTEGER NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    def health(self):
+        """Simple health check endpoint."""
+        return jsonify({'status': 'ok'})
 
-@app.route('/health', methods=['GET'])
-def health():
-    """Simple health check endpoint."""
-    return jsonify({'status': 'ok'})
+    def register(self):
+        """
+        Handles: Client -> Master: Request Register (Username, Plain Password)
+        """
+        data = request.json or {}
+        username = data.get('username')
+        password = data.get('password')
 
-@app.route('/store', methods=['POST'])
-def store_metadata():
-    """Registers new file metadata in the database."""
-    # Equivalent to parsing a JSON body with a library like cJSON in C
-    data = request.json or {}
-    filename = data.get('filename')
-    chunks = int(data.get('chunks', 1))
+        if not username or not password:
+            return jsonify({"error": "Missing credentials"}), 400
+            
+        try:
+            # The DB manager handles the bcrypt hashing internally
+            self.db.register_user(username, password)
+            # Master returns 201 Created
+            return jsonify({"message": "User registered"}), 201
+        except ValueError:
+            return jsonify({"error": "Username already exists"}), 409
 
-    if not filename:
-        return jsonify({'error': 'filename required'}), 400
+    def login(self):
+        """
+        Handles: Client -> Master: Request Login (Username, Plain Password)
+        """
+        data = request.json or {}
+        username = data.get('username')
+        password = data.get('password')
 
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    
-    # Using '?' placeholders prevents SQL Injection (similar to prepared statements)
-    cur.execute('INSERT INTO files (filename, chunks, created_at) VALUES (?, ?, ?)',
-                (filename, chunks, datetime.utcnow().isoformat()))
-    
-    fid = cur.lastrowid # Get the last inserted ID (AUTOINCREMENT)
-    conn.commit()
-    conn.close() # Fixed: Ensure connection is closed inside the function
-    
-    return jsonify({'id': fid, 'filename': filename}), 201
+        if not username or not password:
+            return jsonify({"error": "Missing credentials"}), 400
+            
+        # Check hashes in DB
+        user_id = self.db.verify_user(username, password)
+        
+        if user_id:
+            # Generate the stateless JWT Token
+            payload = {
+                'user_id': user_id,
+                # The token will expire in 24 hours
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+            }
+            token = jwt.encode(payload, self.secret_key, algorithm='HS256')
+            
+            # Master returns 200 OK (Auth Token)
+            return jsonify({"token": token}), 200
+        else:
+            return jsonify({"error": "Invalid credentials"}), 401
 
-
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    """Accepts a file upload, saves it to disk and registers metadata."""
-    if 'file' not in request.files:
-        return jsonify({'error': 'file field is required'}), 400
-
-    f = request.files['file']
-    if f.filename == '':
-        return jsonify({'error': 'filename required'}), 400
-
-    filename = secure_filename(f.filename)
-    save_dir = os.path.join(BASE_DIR, 'data')
-    os.makedirs(save_dir, exist_ok=True)
-    save_path = os.path.join(save_dir, filename)
-    f.save(save_path)
-
-    # register metadata entry in the database
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute('INSERT INTO files (filename, chunks, created_at) VALUES (?, ?, ?)',
-                (filename, 1, datetime.utcnow().isoformat()))
-    fid = cur.lastrowid
-    conn.commit()
-    conn.close()
-
-    return jsonify({'id': fid, 'filename': filename, 'path': save_path}), 201
-
-@app.route('/files', methods=['GET'])
-def list_files():
-    """Returns a list of all files registered in the system."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute('SELECT id, filename, chunks, created_at FROM files')
-    rows = cur.fetchall()
-    conn.close()
-    
-    # List comprehension: a compact way to build a list of dictionaries
-    files = [{'id': r[0], 'filename': r[1], 'chunks': r[2], 'created_at': r[3]} for r in rows]
-    return jsonify(files)
+    def run(self, host='0.0.0.0', port=5000):
+        """Starts the Flask server loop (blocking call)."""
+        self.app.run(host=host, port=port, debug=True)
 
 if __name__ == '__main__':
-    # Initialize the database before starting the server
-    init_db()
-    # Start the Flask development server
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Entry point for the Master Server
+    server = AdriaServer()
+    server.run()
+
