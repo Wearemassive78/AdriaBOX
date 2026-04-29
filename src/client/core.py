@@ -1,5 +1,6 @@
 import os
 import requests
+from client.session import SessionManager
 
 class AdriaClient:
     """Core logic for interacting with AdriaBOX cluster."""
@@ -7,11 +8,15 @@ class AdriaClient:
     def __init__(self, metadata_url: str):
         """Initializes the client with the server URL and an empty token."""
         self.metadata_url = metadata_url
-        self.auth_token = None
+        self.session_manager = SessionManager()
+        self.auth_token = self.session_manager.load_token()
         
         # A Session object keeps the underlying TCP connection alive 
         # (connection pooling) and persists cookies/headers across requests.
         self.session = requests.Session()
+
+        if self.auth_token:
+            self.session.headers.update({"Authorization": f"Bearer {self.auth_token}"})
 
     def register(self, username, password):
         """
@@ -49,7 +54,7 @@ class AdriaClient:
         response.raise_for_status()
         
         data = response.json()
-        
+      
         # Master returns 200 OK (Auth Token) [cite: 2]
         # Store Token locally in memory [cite: 3]
         self.auth_token = data.get("token")
@@ -58,6 +63,18 @@ class AdriaClient:
         # to the headers of ALL future HTTP requests.
         if self.auth_token:
             self.session.headers.update({"Authorization": f"Bearer {self.auth_token}"})
-        
+            self.session_manager.save_token(self.auth_token)
+
         return data
 
+
+    def logout(self):
+        """
+        Implements: adria logout
+        Clears the local token and HTTP headers.
+        """
+        self.auth_token = None
+        if "Authorization" in self.session.headers:
+            del self.session.headers["Authorization"]
+        
+        self.session_manager.clear_session()

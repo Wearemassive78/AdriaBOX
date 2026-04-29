@@ -6,7 +6,7 @@ from metadata_server.db import DatabaseManager
 class AdriaServer:
     """Master Node Web Server handling REST API requests."""
 
-    def __init__(self, db_path="metadata.db", secret_key="super-secret-master-key"):
+    def __init__(self, db_path="metadata.db", secret_key="super-secret-master-key-for-adriabox"):
         """
         Initializes the Flask application and the Database connection.
         """
@@ -64,7 +64,7 @@ class AdriaServer:
             payload = {
                 'user_id': user_id,
                 # The token will expire in 24 hours
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                'exp': datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=24)
             }
             token = jwt.encode(payload, self.secret_key, algorithm='HS256')
             

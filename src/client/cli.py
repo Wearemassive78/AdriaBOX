@@ -1,6 +1,6 @@
 import argparse
 import sys
-from client import AdriaClient  # Importing the engine we just built
+from client.core import AdriaClient  # Importing the engine we just built
 
 class AdriaCLI:
     """Command Line Interface for AdriaBOX."""
@@ -25,6 +25,9 @@ class AdriaCLI:
         login_parser.add_argument("username", type=str)
         login_parser.add_argument("password", type=str)
 
+        # 3. Command: adria logout
+        logout_parser = self.subparsers.add_parser("logout", help="Logout and clear session")
+
         # Instantiate the client (Hardcoding localhost for now, we can make this dynamic later)
         self.client = AdriaClient(metadata_url="http://127.0.0.1:5000")
 
@@ -39,6 +42,8 @@ class AdriaCLI:
             self._handle_register(args.username, args.password)
         elif args.command == "login":
             self._handle_login(args.username, args.password)
+        elif args.command == "logout":
+            self._handle_logout()
         else:
             # If no command is given, print the help menu
             self.parser.print_help()
@@ -61,7 +66,13 @@ class AdriaCLI:
         except Exception as e:
             print(f"Error during login: {e}")
 
-# This is the exact Python equivalent of 'int main()'. 
+    def _handle_logout(self):
+        try:
+            self.client.logout()
+            print("Logged out successfully. Local session cleared.")
+        except Exception as e:
+            print(f"Error during logout: {e}")
+
 # It runs only if this script is executed directly from the terminal.
 if __name__ == "__main__":
     cli = AdriaCLI()
