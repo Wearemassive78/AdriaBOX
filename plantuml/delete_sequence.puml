@@ -1,0 +1,36 @@
+@startuml
+title Sequence Diagram: Resource Deletion (File & Directory)
+
+actor User
+participant "Client (CLI)" as Client
+participant "Metadata Server\n(Master)" as Master
+participant "Storage Nodes\n(Cluster)" as Nodes
+
+== 1. Client-Side Confirmation ==
+User -> Client: Type 'adria rm <path>' or 'adria rmdir <path>'
+activate Client
+Client --> User: "Warning: this will permanently delete resources. Are you sure? [y/N]"
+User -> Client: Input 'y'
+
+== 2. Metadata & Resolution ==
+Client -> Master: Request Delete (Path, Auth Token)
+activate Master
+Master -> Master: Validate Token & Check Ownership/Permissions
+Master -> Master: Resolve Path\n(Identify all files and chunks involved)
+
+== 3. Physical Deletion (Cascading) ==
+Master -> Nodes: Command: Delete Chunks (List of Chunk IDs)
+activate Nodes
+note over Nodes: Physically remove\nbinary files from disk
+Nodes --> Master: ACK (Chunks Deleted)
+deactivate Nodes
+
+== 4. Metadata Cleanup ==
+Master -> Master: Remove resource records from SQL Database
+Master --> Client: 200 OK (Deletion successful)
+deactivate Master
+
+Client --> User: "Resource successfully deleted."
+deactivate Client
+
+@enduml
