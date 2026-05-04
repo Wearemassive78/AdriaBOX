@@ -1,12 +1,13 @@
 from flask import Flask, request, jsonify
 import jwt
 import datetime
+import os
 from metadata_server.db import DatabaseManager
 
 class AdriaServer:
     """Master Node Web Server handling REST API requests."""
 
-    def __init__(self, db_path="metadata.db", secret_key="super-secret-master-key-for-adriabox"):
+    def __init__(self, db_path=os.path.join(os.path.dirname(__file__), 'data', 'metadata.db'), secret_key="super-secret-master-key-for-adriabox"):
         """
         Initializes the Flask application and the Database connection.
         """
@@ -66,7 +67,7 @@ class AdriaServer:
                 'username': user['username'],
                 'role': user.get('role', 'user'),
                 # The token will expire in 24 hours
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+                'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
             }
             token = jwt.encode(payload, self.secret_key, algorithm='HS256')
 
