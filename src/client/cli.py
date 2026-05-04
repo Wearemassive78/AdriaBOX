@@ -1,14 +1,16 @@
 import argparse
 import sys
-import os
-from client.core import AdriaClient  # Importing the engine we just built
+import jwt
 
-# Optional rich for colored output / banners. Falls back to plain text if unavailable.
+from client.core import AdriaClient
+from client.session import SessionManager
+
 try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.markdown import Markdown
     from rich.table import Table
+    from rich.columns import Columns
 
     RICH_AVAILABLE = True
     console = Console()
@@ -23,13 +25,17 @@ class AdriaCLI:
     def __init__(self):
         self.parser = argparse.ArgumentParser(
             description="AdriaBOX CLI Reference Manual",
-            formatter_class=argparse.RawTextHelpFormatter  # Permette una formattazione più pulita
+            formatter_class=argparse.RawTextHelpFormatter,
+            add_help=False,
         )
-        self.subparsers = self.parser.add_subparsers(dest="command", help="Available commands:")
-        # Keep command metadata for a nicer help table
+
+        self.subparsers = self.parser.add_subparsers(
+            dest="command",
+            help="Available commands:"
+        )
+
         self.commands_info = {}
 
-        # --- Authentication ---
         reg_help = "adria register <username> <password>\nCreates a new user account."
         register_parser = self.subparsers.add_parser("register", help=reg_help)
         register_parser.add_argument("username", type=str)
@@ -42,11 +48,14 @@ class AdriaCLI:
         login_parser.add_argument("password", type=str)
         self.commands_info["login"] = login_help
 
+        whoami_help = "adria whoami\nShow current authenticated user and role."
+        self.subparsers.add_parser("whoami", help=whoami_help)
+        self.commands_info["whoami"] = whoami_help
+
         logout_help = "adria logout\nInvalidates session and clears credentials."
         self.subparsers.add_parser("logout", help=logout_help)
         self.commands_info["logout"] = logout_help
 
-        # --- File Operations (Stubs for help menu) ---
         upload_help = "adria upload <local_filepath> [-d <remote_dir>]\nUploads a file to the cluster."
         upload_parser = self.subparsers.add_parser("upload", help=upload_help)
         upload_parser.add_argument("local_filepath")
@@ -70,7 +79,6 @@ class AdriaCLI:
         mv_parser.add_argument("destination")
         self.commands_info["mv"] = mv_help
 
-        # --- Directory Operations (Stubs for help menu) ---
         mkdir_help = "adria mkdir <directory_path>\nCreates a new remote directory."
         mkdir_parser = self.subparsers.add_parser("mkdir", help=mkdir_help)
         mkdir_parser.add_argument("directory_path")
@@ -87,7 +95,6 @@ class AdriaCLI:
         ls_parser.add_argument("directory_path", nargs="?", default="/")
         self.commands_info["ls"] = ls_help
 
-        # --- System Operations (Stubs for help menu) ---
         quota_help = "adria quota\nDisplays storage usage and limits."
         self.subparsers.add_parser("quota", help=quota_help)
         self.commands_info["quota"] = quota_help
@@ -101,26 +108,79 @@ class AdriaCLI:
         self.client = AdriaClient(metadata_url="http://127.0.0.1:5000")
 
     def run(self):
-        """
-        Parses the arguments and executes the requested operation.
-        """
-        # Automatically parses sys.argv and creates an object with our variables
+        if len(sys.argv) == 1 or sys.argv[1] in ("-h", "--help"):
+            self._show_help()
+            return
+
         args = self.parser.parse_args()
 
         if args.command == "register":
             self._handle_register(args.username, args.password)
         elif args.command == "login":
             self._handle_login(args.username, args.password)
+        elif args.command == "whoami":
+            self._handle_whoami()
         elif args.command == "logout":
             self._handle_logout()
+        elif args.command == "upload":
+            print("Upload command not implemented yet.")
+        elif args.command == "download":
+            print("Download command not implemented yet.")
+        elif args.command == "rm":
+            print("Remove command not implemented yet.")
+        elif args.command == "mv":
+            print("Move command not implemented yet.")
+        elif args.command == "mkdir":
+            print("Mkdir command not implemented yet.")
+        elif args.command == "rmdir":
+            print("Rmdir command not implemented yet.")
+        elif args.command == "ls":
+            print("List command not implemented yet.")
+        elif args.command == "quota":
+            print("Quota command not implemented yet.")
+        elif args.command == "cluster-status":
+            print("Cluster status command not implemented yet.")
         else:
-            # If no command is given, print a nicer help table when possible
-            if RICH_AVAILABLE and console:
-                self._print_fancy_help()
-            else:
-                self.parser.print_help()
+            self._show_help()
+
+    def _show_help(self):
+        if RICH_AVAILABLE and console:
+            self._print_fancy_help()
+        else:
+            self.parser.print_help()
+
+    def _get_current_user(self):
+        uname = getattr(self.client, "current_username", None)
+        role = getattr(self.client, "current_role", None)
+
+        if uname:
+            return uname, role or "user"
+
+        try:
+            sm = SessionManager()
+            data = sm.load_session() or {}
+            token = data.get("token")
+
+            if token:
+                payload = jwt.decode(
+                    token,
+                    options={"verify_signature": False}
+                )
+
+                uname = payload.get("username")
+                role = payload.get("role")
+
+                if uname:
+                    return uname, role or "user"
+
+        except Exception:
+            pass
+
+        return None, None
 
     def _print_fancy_help(self):
+        uname, role = self._get_current_user()
+
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("Command", style="cyan", no_wrap=True)
         table.add_column("Usage", style="green")
@@ -133,44 +193,90 @@ class AdriaCLI:
             desc = parts[1] if len(parts) > 1 else ""
             table.add_row(cmd, usage, desc)
 
-        console.print(Panel("[bold cyan]AdriaBOX CLI[/bold cyan]\nUse one of the commands below:", expand=False))
+        if uname:
+            user_text = (
+                f"[bold cyan]Username:[/bold cyan] {uname}\n"
+                f"[bold green]Role:[/bold green] {role}"
+            )
+        else:
+            user_text = (
+                "[yellow]Username:[/yellow] Not authenticated\n"
+                "[dim]Role: -[/dim]"
+            )
+
+        left_panel = Panel(
+            "[bold cyan]AdriaBOX CLI[/bold cyan]\nUse one of the commands below:",
+            title="Menu",
+            width=55
+        )
+
+        right_panel = Panel(
+            user_text,
+            title="Current user",
+            width=35
+        )
+
+        console.print()
+        console.print(Columns([left_panel, right_panel], equal=False, expand=False))
+        console.print()
         console.print(table)
 
     def _handle_register(self, username, password):
         try:
-            # We call the logic layer (AdriaClient)
             self.client.register(username, password)
+
             if RICH_AVAILABLE and console:
                 console.print("[green]Registration successful.[/green] Please login.")
             else:
                 print("Registration successful. Please login.")
+
         except Exception as e:
             print(f"Error during registration: {e}")
 
     def _handle_login(self, username, password):
         try:
             self.client.login(username, password)
+
             if RICH_AVAILABLE and console:
                 console.print("[green]Login successful.[/green] Session active.")
             else:
                 print("Login successful. Session active.")
+
         except Exception as e:
             print(f"Error during login: {e}")
 
     def _handle_logout(self):
         try:
             self.client.logout()
+
             if RICH_AVAILABLE and console:
                 console.print("[yellow]Logged out successfully.[/yellow] Local session cleared.")
             else:
                 print("Logged out successfully. Local session cleared.")
+
         except Exception as e:
             print(f"Error during logout: {e}")
 
+    def _handle_whoami(self):
+        try:
+            uname, role = self._get_current_user()
+
+            if uname:
+                if RICH_AVAILABLE and console:
+                    console.print(f"[bold]{uname}[/bold] — [green]{role}[/green]")
+                else:
+                    print(f"{uname} — {role}")
+            else:
+                if RICH_AVAILABLE and console:
+                    console.print("[yellow]Not authenticated[/yellow]")
+                else:
+                    print("Not authenticated")
+
+        except Exception as e:
+            print(f"Error: {e}")
+
 
 def main():
-    """Entry point for the console script."""
-    # Print a friendly banner when running as entrypoint
     if RICH_AVAILABLE and console:
         console.print(Markdown("# :anchor: AdriaBOX\nA compact CLI for the AdriaBOX project."))
 
@@ -178,6 +284,5 @@ def main():
     cli.run()
 
 
-# It runs only if this script is executed directly from the terminal.
 if __name__ == "__main__":
     main()

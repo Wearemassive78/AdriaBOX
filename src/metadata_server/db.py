@@ -35,7 +35,8 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE NOT NULL,
-                    password_hash TEXT NOT NULL
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'user'
                 )
             ''')
             
@@ -50,6 +51,12 @@ class DatabaseManager:
                     FOREIGN KEY(owner_id) REFERENCES users(id)
                 )
             ''')
+            # Ensure older databases get the 'role' column added if missing
+            cur.execute("PRAGMA table_info(users)")
+            cols = [r[1] for r in cur.fetchall()]
+            if 'role' not in cols:
+                cur.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
+
             conn.commit()
 
     def register_user(self, username, plain_password):
@@ -63,8 +70,8 @@ class DatabaseManager:
             cur = conn.cursor()
             try:
                 # The '?' placeholders prevent SQL Injection
-                cur.execute('INSERT INTO users (username, password_hash) VALUES (?, ?)',
-                            (username, hashed_pw))
+                cur.execute('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)',
+                            (username, hashed_pw, 'user'))
                 conn.commit()
                 return cur.lastrowid
             except sqlite3.IntegrityError:
@@ -78,11 +85,11 @@ class DatabaseManager:
         """
         with self._get_connection() as conn:
             cur = conn.cursor()
-            cur.execute('SELECT id, password_hash FROM users WHERE username = ?', (username,))
+            cur.execute('SELECT id, username, password_hash, role FROM users WHERE username = ?', (username,))
             user = cur.fetchone()
 
             if user and check_password_hash(user['password_hash'], plain_password):
-                return user['id']
-            
+                return {'id': user['id'], 'username': user['username'], 'role': user['role']}
+
             return None
 

@@ -17,13 +17,27 @@ class SessionManager:
         with open(self.filepath, 'w') as f:
             json.dump({"token": token}, f)
 
+    def save_session(self, session_data: dict):
+        """Writes a session dict (token, username, role) to disk."""
+        with open(self.filepath, 'w') as f:
+            json.dump(session_data, f)
+
     def load_token(self):
         """Reads the token from disk if the file exists."""
+        data = self.load_session()
+        if data:
+            return data.get('token')
+        return None
+
+    def load_session(self):
+        """Reads the full session dict from disk if present."""
         if os.path.exists(self.filepath):
-            # The 'r' flag opens the file for reading
             with open(self.filepath, 'r') as f:
-                data = json.load(f)
-                return data.get("token")
+                try:
+                    data = json.load(f)
+                    return data
+                except Exception:
+                    return None
         return None
 
     def clear_session(self):

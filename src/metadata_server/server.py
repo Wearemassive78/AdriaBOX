@@ -56,20 +56,26 @@ class AdriaServer:
         if not username or not password:
             return jsonify({"error": "Missing credentials"}), 400
             
-        # Check hashes in DB
-        user_id = self.db.verify_user(username, password)
-        
-        if user_id:
-            # Generate the stateless JWT Token
+        # Check hashes in DB; verify_user now returns a dict with id, username, role
+        user = self.db.verify_user(username, password)
+
+        if user:
+            # Generate the stateless JWT Token including username and role
             payload = {
-                'user_id': user_id,
+                'user_id': user['id'],
+                'username': user['username'],
+                'role': user.get('role', 'user'),
                 # The token will expire in 24 hours
-                'exp': datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=24)
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
             }
             token = jwt.encode(payload, self.secret_key, algorithm='HS256')
-            
-            # Master returns 200 OK (Auth Token)
-            return jsonify({"token": token}), 200
+
+            # Ensure token is a str for JSON transport (pyjwt may return bytes)
+            if isinstance(token, bytes):
+                token = token.decode('utf-8')
+
+            # Master returns 200 OK (Auth Token) and user info
+            return jsonify({"token": token, "username": user['username'], "role": user.get('role', 'user')}), 200
         else:
             return jsonify({"error": "Invalid credentials"}), 401
 
