@@ -7,7 +7,7 @@ from metadata_server.db import DatabaseManager
 class AdriaServer:
     """Master Node Web Server handling REST API requests."""
 
-    def __init__(self, db_path=os.path.join(os.path.dirname(__file__), 'data', 'metadata.db'), secret_key="super-secret-master-key-for-adriabox"):
+    def __init__(self, db_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'metadata.db'), secret_key="super-secret-master-key-for-adriabox"):
         """
         Initializes the Flask application and the Database connection.
         """
