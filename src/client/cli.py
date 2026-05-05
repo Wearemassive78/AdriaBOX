@@ -4,6 +4,7 @@ import jwt
 
 from client.core import AdriaClient
 from client.session import SessionManager
+from client.config import load_client_config
 
 try:
     from rich.console import Console
@@ -105,7 +106,11 @@ class AdriaCLI:
         status_parser.add_argument("-u", "--user", help="Query specific user quota")
         self.commands_info["cluster-status"] = status_help
 
-        self.client = AdriaClient(metadata_url="http://127.0.0.1:5000")
+        config = load_client_config()
+        self.client = AdriaClient(
+            metadata_url=config.metadata_url,
+            request_timeout=config.request_timeout,
+        )
 
     def run(self):
         if len(sys.argv) == 1 or sys.argv[1] in ("-h", "--help"):

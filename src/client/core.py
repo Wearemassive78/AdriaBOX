@@ -2,13 +2,17 @@ import os
 import requests
 import jwt
 from client.session import SessionManager
+from client.config import load_client_config
+from client.validators import require_metadata_url, require_text
 
 class AdriaClient:
     """Core logic for interacting with AdriaBOX cluster."""
 
-    def __init__(self, metadata_url: str):
+    def __init__(self, metadata_url: str | None = None, request_timeout: float | None = None):
         """Initializes the client with the server URL and an empty token."""
-        self.metadata_url = metadata_url
+        config = load_client_config()
+        self.metadata_url = require_metadata_url(metadata_url or config.metadata_url)
+        self.request_timeout = request_timeout if request_timeout is not None else config.request_timeout
         self.session_manager = SessionManager()
         session_data = self.session_manager.load_session() or {}
         self.auth_token = session_data.get('token')
@@ -37,6 +41,8 @@ class AdriaClient:
         Implements: adria register <user> <pass>
         Sends credentials to the Master node.
         """
+        username = require_text(username, "username")
+        password = require_text(password, "password")
         url = f"{self.metadata_url}/register"
         payload = {
             "username": username,
@@ -58,6 +64,8 @@ class AdriaClient:
         Implements: adria login <user> <pass>
         Retrieves the JWT token and stores it in the session state.
         """
+        username = require_text(username, "username")
+        password = require_text(password, "password")
         url = f"{self.metadata_url}/login"
         payload = {
             "username": username,
