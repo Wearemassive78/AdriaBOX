@@ -1,12 +1,12 @@
 import pytest
 from unittest.mock import patch, Mock
 
-# Assumendo che tu abbia salvato la classe AdriaClient nel file src/client/client.py
-from client.client import AdriaClient
+# Assumendo che tu abbia salvato la classe AdriaClient nel file src/client/api.py
+from client.api import AdriaClient
 
 # Il decoratore @patch "intercetta" la funzione post della libreria requests.
 # mock_post è il nostro "Server finto" che ci viene passato come parametro.
-@patch('client.client.requests.Session.post')
+@patch('client.core.requests.Session.post')
 def test_client_register_success(mock_post):
     """Tests if the register function sends the correct JSON payload."""
     
@@ -36,7 +36,7 @@ def test_client_register_success(mock_post):
         json={"username": "mario", "password": "password123"}
     )
 
-@patch('client.client.requests.Session.post')
+@patch('client.core.requests.Session.post')
 def test_client_login_success(mock_post):
     """Tests if login successfully stores the JWT token in session headers."""
     

@@ -5,8 +5,8 @@ Provides package-level metadata and an explicit export list for convenience.
 """
 
 __all__ = [
+    "api",
     "cli",
-    "client",
     "config",
     "core",
     "exceptions",
@@ -16,3 +16,5 @@ __all__ = [
 ]
 
 __version__ = "0.1.0"
+
+from client.core import AdriaClient
