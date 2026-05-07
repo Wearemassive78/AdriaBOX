@@ -42,6 +42,9 @@ server.error.log
 # Local databases.
 # Keep the canonical project database used by the tests/examples.
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 !data/metadata.db
 
 # Local editor and OS noise
