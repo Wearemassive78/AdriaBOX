@@ -1,4 +1,5 @@
 import sqlite3
+import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
 class DatabaseManager:
@@ -51,6 +52,18 @@ class DatabaseManager:
                     FOREIGN KEY(owner_id) REFERENCES users(id)
                 )
             ''')
+
+            cur.execute('''
+                CREATE TABLE IF NOT EXISTS storage_nodes (
+                    node_id TEXT PRIMARY KEY,
+                    host TEXT NOT NULL,
+                    http_port INTEGER NOT NULL,
+                    tcp_port INTEGER NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    last_seen TEXT NOT NULL
+                )
+            ''')
+
             # Ensure older databases get the 'role' column added if missing
             cur.execute("PRAGMA table_info(users)")
             cols = [r[1] for r in cur.fetchall()]
@@ -58,6 +71,44 @@ class DatabaseManager:
                 cur.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'")
 
             conn.commit()
+
+    def register_storage_node(self, node_id, host, http_port, tcp_port, status='active'):
+        """Registers or refreshes a storage node heartbeat."""
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('''
+                INSERT INTO storage_nodes (node_id, host, http_port, tcp_port, status, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(node_id) DO UPDATE SET
+                    host = excluded.host,
+                    http_port = excluded.http_port,
+                    tcp_port = excluded.tcp_port,
+                    status = excluded.status,
+                    last_seen = excluded.last_seen
+            ''', (node_id, host, http_port, tcp_port, status, now))
+            conn.commit()
+
+        return {
+            'node_id': node_id,
+            'host': host,
+            'http_port': http_port,
+            'tcp_port': tcp_port,
+            'status': status,
+            'last_seen': now,
+        }
+
+    def list_storage_nodes(self):
+        """Returns all registered storage nodes ordered by node id."""
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('''
+                SELECT node_id, host, http_port, tcp_port, status, last_seen
+                FROM storage_nodes
+                ORDER BY node_id
+            ''')
+            return [dict(row) for row in cur.fetchall()]
 
     def register_user(self, username, plain_password):
         """
@@ -92,4 +143,3 @@ class DatabaseManager:
                 return {'id': user['id'], 'username': user['username'], 'role': user['role']}
 
             return None
-

@@ -7,12 +7,12 @@ from metadata_server.db import DatabaseManager
 class AdriaServer:
     """Master Node Web Server handling REST API requests."""
 
-    def __init__(self, db_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'metadata.db'), secret_key="super-secret-master-key-for-adriabox"):
+    def __init__(self, db_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'metadata.db'), secret_key="super-secret-master-key-for-adriabox", db=None):
         """
         Initializes the Flask application and the Database connection.
         """
         self.app = Flask(__name__)
-        self.db = DatabaseManager(db_path)
+        self.db = db or DatabaseManager(db_path)
         
         # This key is used to cryptographically sign the JWT tokens.
         # In a real production environment, this should be an environment variable.
@@ -22,6 +22,8 @@ class AdriaServer:
         self.app.add_url_rule('/health', view_func=self.health, methods=['GET'])
         self.app.add_url_rule('/register', view_func=self.register, methods=['POST'])
         self.app.add_url_rule('/login', view_func=self.login, methods=['POST'])
+        self.app.add_url_rule('/nodes', view_func=self.list_nodes, methods=['GET'])
+        self.app.add_url_rule('/nodes', view_func=self.register_node, methods=['POST'])
 
     def health(self):
         """Simple health check endpoint."""
@@ -79,6 +81,34 @@ class AdriaServer:
             return jsonify({"token": token, "username": user['username'], "role": user.get('role', 'user')}), 200
         else:
             return jsonify({"error": "Invalid credentials"}), 401
+
+    def register_node(self):
+        """Registers or refreshes a storage node in the cluster registry."""
+        data = request.json or {}
+        node_id = data.get('node_id')
+        host = data.get('host')
+        http_port = data.get('http_port')
+        tcp_port = data.get('tcp_port')
+
+        if not node_id or not host or not http_port or not tcp_port:
+            return jsonify({"error": "Missing node registration fields"}), 400
+
+        try:
+            node = self.db.register_storage_node(
+                node_id=node_id,
+                host=host,
+                http_port=int(http_port),
+                tcp_port=int(tcp_port),
+                status=data.get('status', 'active'),
+            )
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid node port"}), 400
+
+        return jsonify(node), 201
+
+    def list_nodes(self):
+        """Lists registered storage nodes."""
+        return jsonify(self.db.list_storage_nodes())
 
     def run(self, host='0.0.0.0', port=5000):
         """Starts the Flask server loop (blocking call)."""

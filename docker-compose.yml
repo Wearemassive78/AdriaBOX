@@ -17,7 +17,9 @@ services:
     environment:
       PYTHONPATH: /app/src
       ADRIABOX_NODE_ID: storage1
+      ADRIABOX_NODE_HOST: storage1
       ADRIABOX_DATA_DIR: /data
+      ADRIABOX_METADATA_URL: http://metadata:5000
     ports:
       - "6001:6001"
       - "7001:7001"
@@ -33,7 +35,9 @@ services:
     environment:
       PYTHONPATH: /app/src
       ADRIABOX_NODE_ID: storage2
+      ADRIABOX_NODE_HOST: storage2
       ADRIABOX_DATA_DIR: /data
+      ADRIABOX_METADATA_URL: http://metadata:5000
     ports:
       - "6002:6002"
       - "7002:7002"
@@ -49,7 +53,9 @@ services:
     environment:
       PYTHONPATH: /app/src
       ADRIABOX_NODE_ID: storage3
+      ADRIABOX_NODE_HOST: storage3
       ADRIABOX_DATA_DIR: /data
+      ADRIABOX_METADATA_URL: http://metadata:5000
     ports:
       - "6003:6003"
       - "7003:7003"
