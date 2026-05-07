@@ -1,20 +1,65 @@
-version: '3.8'
 services:
   metadata:
-    image: python:3.11-slim
-    working_dir: /app
-    volumes:
-      - ./:/app
+    build: .
+    container_name: adriabox-metadata
     command: python src/metadata_server/server.py
+    environment:
+      PYTHONPATH: /app/src
     ports:
       - "5000:5000"
+    volumes:
+      - metadata-db:/app/data
 
   storage1:
-    image: python:3.11-slim
-    working_dir: /app
-    volumes:
-      - ./:/app
+    build: .
+    container_name: adriabox-storage1
     command: python src/storage_node/node.py --http-port 6001 --tcp-port 7001
+    environment:
+      PYTHONPATH: /app/src
+      ADRIABOX_NODE_ID: storage1
+      ADRIABOX_DATA_DIR: /data
     ports:
       - "6001:6001"
       - "7001:7001"
+    volumes:
+      - storage1-data:/data
+    depends_on:
+      - metadata
+
+  storage2:
+    build: .
+    container_name: adriabox-storage2
+    command: python src/storage_node/node.py --http-port 6002 --tcp-port 7002
+    environment:
+      PYTHONPATH: /app/src
+      ADRIABOX_NODE_ID: storage2
+      ADRIABOX_DATA_DIR: /data
+    ports:
+      - "6002:6002"
+      - "7002:7002"
+    volumes:
+      - storage2-data:/data
+    depends_on:
+      - metadata
+
+  storage3:
+    build: .
+    container_name: adriabox-storage3
+    command: python src/storage_node/node.py --http-port 6003 --tcp-port 7003
+    environment:
+      PYTHONPATH: /app/src
+      ADRIABOX_NODE_ID: storage3
+      ADRIABOX_DATA_DIR: /data
+    ports:
+      - "6003:6003"
+      - "7003:7003"
+    volumes:
+      - storage3-data:/data
+    depends_on:
+      - metadata
+
+volumes:
+  metadata-db:
+  storage1-data:
+  storage2-data:
+  storage3-data:

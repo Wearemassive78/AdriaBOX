@@ -10,7 +10,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 app = Flask(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+NODE_ID = os.environ.get('ADRIABOX_NODE_ID', 'storage-node')
+DATA_DIR = os.environ.get(
+    'ADRIABOX_DATA_DIR',
+    os.path.join(os.path.dirname(__file__), 'data')
+)
 os.makedirs(DATA_DIR, exist_ok=True)
 
 def handle_tcp_client(conn, addr, storage_dir=DATA_DIR):
@@ -33,7 +37,15 @@ def run_tcp_server(host, port):
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'ok'})
+    return jsonify({'status': 'ok', 'node_id': NODE_ID})
+
+@app.route('/info')
+def info():
+    return jsonify({
+        'node_id': NODE_ID,
+        'data_dir': DATA_DIR,
+        'files_count': len(os.listdir(DATA_DIR)),
+    })
 
 @app.route('/files')
 def files():
