@@ -98,60 +98,66 @@ class AdriaClient:
         return data
 
     def upload(self, local_filepath, destination="/"):
-        """Uploads a local file by splitting it across storage nodes."""
-        local_filepath = require_existing_file(local_filepath)
-        destination = destination or "/"
-        filename = os.path.basename(local_filepath)
-        file_size = os.path.getsize(local_filepath)
+        """Uploads a local file by splitting it across storage nodes.
 
-        plan_response = self.session.post(
-            f"{self.metadata_url}/files/upload-plan",
-            json={
-                "filename": filename,
-                "size": file_size,
-                "remote_dir": destination,
-            },
-            timeout=self.request_timeout,
-        )
-        plan_response.raise_for_status()
-        plan = plan_response.json()
+        Temporarily disabled per user request. The original implementation
+        is commented out below and the method now raises
+        NotImplementedError to make the disabled state explicit.
+        """
 
-        uploaded_chunks = []
-        with open(local_filepath, "rb") as source:
-            for chunk in plan["chunks"]:
-                source.seek(chunk["offset"])
-                data = source.read(chunk["size"])
-                send_bytes(
-                    chunk["client_host"],
-                    int(chunk["tcp_port"]),
-                    chunk["chunk_filename"],
-                    data,
-                )
-                uploaded_chunks.append({
-                    "index": chunk["index"],
-                    "chunk_filename": chunk["chunk_filename"],
-                    "node_id": chunk["node_id"],
-                    "host": chunk["host"],
-                    "client_host": chunk["client_host"],
-                    "tcp_port": int(chunk["tcp_port"]),
-                    "size": len(data),
-                    "sha256": chunk_sha256(data),
-                })
+        # Temporarily disabled implementation (original code preserved as comments):
+        # local_filepath = require_existing_file(local_filepath)
+        # destination = destination or "/"
+        # filename = os.path.basename(local_filepath)
+        # file_size = os.path.getsize(local_filepath)
+        # plan_response = self.session.post(
+        #     f"{self.metadata_url}/files/upload-plan",
+        #     json={
+        #         "filename": filename,
+        #         "size": file_size,
+        #         "remote_dir": destination,
+        #     },
+        #     timeout=self.request_timeout,
+        # )
+        # plan_response.raise_for_status()
+        # plan = plan_response.json()
+        # uploaded_chunks = []
+        # with open(local_filepath, "rb") as source:
+        #     for chunk in plan["chunks"]:
+        #         source.seek(chunk["offset"])
+        #         data = source.read(chunk["size"])
+        #         send_bytes(
+        #             chunk["client_host"],
+        #             int(chunk["tcp_port"]),
+        #             chunk["chunk_filename"],
+        #             data,
+        #         )
+        #         uploaded_chunks.append({
+        #             "index": chunk["index"],
+        #             "chunk_filename": chunk["chunk_filename"],
+        #             "node_id": chunk["node_id"],
+        #             "host": chunk["host"],
+        #             "client_host": chunk["client_host"],
+        #             "tcp_port": int(chunk["tcp_port"]),
+        #             "size": len(data),
+        #             "sha256": chunk_sha256(data),
+        #         })
+        # complete_response = self.session.post(
+        #     f"{self.metadata_url}/files/complete",
+        #     json={
+        #         "file_id": plan["file_id"],
+        #         "filename": plan["filename"],
+        #         "remote_path": plan["remote_path"],
+        #         "size": file_size,
+        #         "sha256": file_sha256(local_filepath),
+        #         "chunks": uploaded_chunks,
+        #     },
+        #     timeout=self.request_timeout,
+        # )
+        # complete_response.raise_for_status()
+        # return complete_response.json()
 
-        complete_response = self.session.post(
-            f"{self.metadata_url}/files/complete",
-            json={
-                "file_id": plan["file_id"],
-                "filename": plan["filename"],
-                "remote_path": plan["remote_path"],
-                "size": file_size,
-                "sha256": file_sha256(local_filepath),
-                "chunks": uploaded_chunks,
-            },
-            timeout=self.request_timeout,
-        )
-        complete_response.raise_for_status()
-        return complete_response.json()
+        raise NotImplementedError("Upload functionality disabled by user")
 
 
     def logout(self):
