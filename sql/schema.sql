@@ -1,7 +1,7 @@
 -- SQL schema for the AdriaBOX Metadata Server.
 -- The runtime database is currently initialized by src/metadata_server/db.py.
 -- Keep this file aligned with DatabaseManager._init_db as schema documentation.
-
+--We will decide later if we want to use this file for initializing the database or just as documentation.
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
