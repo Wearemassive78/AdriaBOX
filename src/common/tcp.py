@@ -40,6 +40,21 @@ def send_file(host, port, filename):
             
     s.close()
 
+def send_bytes(host, port, remote_filename, data):
+    """Send an in-memory bytes payload to a storage node with a remote filename."""
+    s = socket.socket()
+    s.connect((host, port))
+
+    encoded_name = os.path.basename(remote_filename).encode('utf-8')
+    header = struct.pack('>I', len(encoded_name)) + encoded_name + struct.pack('>Q', len(data))
+
+    try:
+        s.sendall(header)
+        if data:
+            s.sendall(data)
+    finally:
+        s.close()
+
 def handle_connection(conn, storage_dir):
     """Handle an entry connection reading the binary file."""
     try:

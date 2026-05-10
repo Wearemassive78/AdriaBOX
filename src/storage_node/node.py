@@ -14,6 +14,7 @@ app = Flask(__name__)
 
 NODE_ID = os.environ.get('ADRIABOX_NODE_ID', 'storage-node')
 NODE_HOST = os.environ.get('ADRIABOX_NODE_HOST', NODE_ID)
+CLIENT_HOST = os.environ.get('ADRIABOX_CLIENT_HOST', 'localhost')
 METADATA_URL = os.environ.get('ADRIABOX_METADATA_URL')
 DATA_DIR = os.environ.get(
     'ADRIABOX_DATA_DIR',
@@ -48,6 +49,7 @@ def register_with_metadata(http_port, tcp_port, retries=10, delay=1.0):
     payload = {
         'node_id': NODE_ID,
         'host': NODE_HOST,
+        'client_host': CLIENT_HOST,
         'http_port': http_port,
         'tcp_port': tcp_port,
         'status': 'active',

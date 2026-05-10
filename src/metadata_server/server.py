@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 import jwt
 import datetime
 import os
+import math
+import uuid
 from metadata_server.db import DatabaseManager
 
 class AdriaServer:
@@ -24,6 +26,8 @@ class AdriaServer:
         self.app.add_url_rule('/login', view_func=self.login, methods=['POST'])
         self.app.add_url_rule('/nodes', view_func=self.list_nodes, methods=['GET'])
         self.app.add_url_rule('/nodes', view_func=self.register_node, methods=['POST'])
+        self.app.add_url_rule('/files/upload-plan', view_func=self.create_upload_plan, methods=['POST'])
+        self.app.add_url_rule('/files/complete', view_func=self.complete_upload, methods=['POST'])
 
     def health(self):
         """Simple health check endpoint."""
@@ -100,6 +104,7 @@ class AdriaServer:
                 http_port=int(http_port),
                 tcp_port=int(tcp_port),
                 status=data.get('status', 'active'),
+                client_host=data.get('client_host', 'localhost'),
             )
         except (TypeError, ValueError):
             return jsonify({"error": "Invalid node port"}), 400
@@ -109,6 +114,75 @@ class AdriaServer:
     def list_nodes(self):
         """Lists registered storage nodes."""
         return jsonify(self.db.list_storage_nodes())
+
+    def create_upload_plan(self):
+        """Creates a placement plan that splits a file across active storage nodes."""
+        data = request.json or {}
+        filename = data.get('filename')
+        size = data.get('size')
+        remote_dir = data.get('remote_dir', '/')
+
+        if not filename or size is None:
+            return jsonify({"error": "Missing upload plan fields"}), 400
+
+        try:
+            size = int(size)
+        except (TypeError, ValueError):
+            return jsonify({"error": "Invalid file size"}), 400
+
+        nodes = [
+            node for node in self.db.list_storage_nodes()
+            if node.get('status') == 'active'
+        ]
+        if not nodes:
+            return jsonify({"error": "No active storage nodes available"}), 503
+
+        chunk_count = min(3, len(nodes), max(1, size))
+        chunk_size = math.ceil(size / chunk_count) if size else 0
+        file_id = str(uuid.uuid4())
+
+        chunks = []
+        for index in range(chunk_count):
+            node = nodes[index % len(nodes)]
+            offset = index * chunk_size
+            current_size = max(0, min(chunk_size, size - offset))
+            chunk_filename = f"{file_id}.chunk{index}"
+            chunks.append({
+                "index": index,
+                "offset": offset,
+                "size": current_size,
+                "chunk_filename": chunk_filename,
+                "node_id": node['node_id'],
+                "host": node['host'],
+                "client_host": node.get('client_host', 'localhost'),
+                "tcp_port": node['tcp_port'],
+            })
+
+        return jsonify({
+            "file_id": file_id,
+            "filename": os.path.basename(filename),
+            "remote_path": os.path.join(remote_dir, os.path.basename(filename)).replace("\\", "/"),
+            "size": size,
+            "chunks": chunks,
+        })
+
+    def complete_upload(self):
+        """Persists uploaded file metadata after all chunks have been stored."""
+        data = request.json or {}
+        required = ('file_id', 'filename', 'remote_path', 'size', 'chunks')
+        if any(data.get(field) is None for field in required):
+            return jsonify({"error": "Missing upload completion fields"}), 400
+
+        stored = self.db.save_stored_file(
+            file_id=data['file_id'],
+            filename=data['filename'],
+            remote_path=data['remote_path'],
+            size=int(data['size']),
+            sha256=data.get('sha256'),
+            chunks=data['chunks'],
+        )
+
+        return jsonify(stored), 201
 
     def run(self, host='0.0.0.0', port=5000):
         """Starts the Flask server loop (blocking call)."""
