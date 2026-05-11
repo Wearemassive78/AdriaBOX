@@ -105,59 +105,70 @@ class AdriaClient:
         NotImplementedError to make the disabled state explicit.
         """
 
-        # Temporarily disabled implementation (original code preserved as comments):
-        # local_filepath = require_existing_file(local_filepath)
-        # destination = destination or "/"
-        # filename = os.path.basename(local_filepath)
-        # file_size = os.path.getsize(local_filepath)
-        # plan_response = self.session.post(
-        #     f"{self.metadata_url}/files/upload-plan",
-        #     json={
-        #         "filename": filename,
-        #         "size": file_size,
-        #         "remote_dir": destination,
-        #     },
-        #     timeout=self.request_timeout,
-        # )
-        # plan_response.raise_for_status()
-        # plan = plan_response.json()
-        # uploaded_chunks = []
-        # with open(local_filepath, "rb") as source:
-        #     for chunk in plan["chunks"]:
-        #         source.seek(chunk["offset"])
-        #         data = source.read(chunk["size"])
-        #         send_bytes(
-        #             chunk["client_host"],
-        #             int(chunk["tcp_port"]),
-        #             chunk["chunk_filename"],
-        #             data,
-        #         )
-        #         uploaded_chunks.append({
-        #             "index": chunk["index"],
-        #             "chunk_filename": chunk["chunk_filename"],
-        #             "node_id": chunk["node_id"],
-        #             "host": chunk["host"],
-        #             "client_host": chunk["client_host"],
-        #             "tcp_port": int(chunk["tcp_port"]),
-        #             "size": len(data),
-        #             "sha256": chunk_sha256(data),
-        #         })
-        # complete_response = self.session.post(
-        #     f"{self.metadata_url}/files/complete",
-        #     json={
-        #         "file_id": plan["file_id"],
-        #         "filename": plan["filename"],
-        #         "remote_path": plan["remote_path"],
-        #         "size": file_size,
-        #         "sha256": file_sha256(local_filepath),
-        #         "chunks": uploaded_chunks,
-        #     },
-        #     timeout=self.request_timeout,
-        # )
-        # complete_response.raise_for_status()
-        # return complete_response.json()
+        # Full upload flow: request an upload plan from the metadata server Max solution,
+        # stream chunks over TCP to storage nodes, then complete the upload.
+        # This restores the implementation that was previously commented out.
 
-        raise NotImplementedError("Upload functionality disabled by user")
+        # 1. Validation
+        if not self.auth_token:
+            raise Exception("Authentication required. Please login first.")
+
+        local_filepath = require_existing_file(local_filepath)
+        destination = destination or "/"
+        filename = os.path.basename(local_filepath)
+        file_size = os.path.getsize(local_filepath)
+
+        # 2. Request an upload plan from the metadata server
+        plan_response = self.session.post(
+            f"{self.metadata_url}/files/upload-plan",
+            json={
+                "filename": filename,
+                "size": file_size,
+                "remote_dir": destination,
+            },
+            timeout=self.request_timeout,
+        )
+        plan_response.raise_for_status()
+        plan = plan_response.json()
+
+        # 3. Stream chunks to the storage nodes
+        uploaded_chunks = []
+        with open(local_filepath, "rb") as source:
+            for chunk in plan.get("chunks", []):
+                source.seek(chunk["offset"])
+                data = source.read(chunk["size"])
+                send_bytes(
+                    chunk["client_host"],
+                    int(chunk["tcp_port"]),
+                    chunk["chunk_filename"],
+                    data,
+                )
+                uploaded_chunks.append({
+                    "index": chunk["index"],
+                    "chunk_filename": chunk["chunk_filename"],
+                    "node_id": chunk.get("node_id"),
+                    "host": chunk.get("host"),
+                    "client_host": chunk.get("client_host"),
+                    "tcp_port": int(chunk.get("tcp_port")),
+                    "size": len(data),
+                    "sha256": chunk_sha256(data),
+                })
+
+        # 4. Notify metadata server that upload is complete
+        complete_response = self.session.post(
+            f"{self.metadata_url}/files/complete",
+            json={
+                "file_id": plan.get("file_id"),
+                "filename": plan.get("filename", filename),
+                "remote_path": plan.get("remote_path", destination),
+                "size": file_size,
+                "sha256": file_sha256(local_filepath),
+                "chunks": uploaded_chunks,
+            },
+            timeout=self.request_timeout,
+        )
+        complete_response.raise_for_status()
+        return complete_response.json()
 
 
     def logout(self):

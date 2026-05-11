@@ -252,13 +252,37 @@ class AdriaCLI:
 
 
     def _handle_upload(self, local_filepath, destination):
-        print("Upload command not implemented yet.")
-        # Example implementation:
-        # try:
-        #     result = self.client.upload(local_filepath, destination)
-        #     print("File uploaded successfully.")
-        # except Exception as e:
-        #     print(f"Error during upload: {e}")
+        try:
+            result = self.client.upload(local_filepath, destination)
+            chunks = result.get("chunks", [])
+
+            if RICH_AVAILABLE and console:
+                table = Table(show_header=True, header_style="bold magenta")
+                table.add_column("Chunk", style="cyan")
+                table.add_column("Node", style="green")
+                table.add_column("Bytes", justify="right")
+                table.add_column("Stored as")
+
+                for chunk in chunks:
+                    table.add_row(
+                        str(chunk.get("index")),
+                        str(chunk.get("node_id")),
+                        str(chunk.get("size")),
+                        str(chunk.get("chunk_filename")),
+                    )
+
+                console.print(f"[green]Upload completed:[/green] {result.get('remote_path')}")
+                console.print(table)
+            else:
+                print(f"Upload completed: {result.get('remote_path')}")
+                for chunk in chunks:
+                    print(
+                        f"chunk {chunk.get('index')} -> "
+                        f"{chunk.get('node_id')} ({chunk.get('size')} bytes)"
+                    )
+
+        except Exception as e:
+            print(f"Error during upload: {e}")
 
     def _handle_logout(self):
         try:
