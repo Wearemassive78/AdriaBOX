@@ -2,7 +2,7 @@ import os
 import requests
 import jwt
 from common.hash import chunk_sha256, file_sha256
-from common.tcp import send_bytes
+from common.tcp import BytesSender
 from client.session import SessionManager
 from client.config import load_client_config
 from client.validators import require_existing_file, require_metadata_url, require_text
@@ -131,13 +131,14 @@ class AdriaClient:
             for chunk in plan.get("chunks", []):
                 source.seek(chunk["offset"])
                 data = source.read(chunk["size"])
-                send_bytes(
+                # Instantiate the OOP sender and transmit the chunk data
+                sender = BytesSender(
                     chunk["client_host"],
                     int(chunk["tcp_port"]),
-                    chunk["chunk_filename"],
-                    data,
-                    timeout=self.request_timeout,
+                    timeout=self.request_timeout
                 )
+                sender.send(chunk["chunk_filename"], data)
+
                 uploaded_chunks.append({
                     "index": chunk["index"],
                     "chunk_filename": chunk["chunk_filename"],
