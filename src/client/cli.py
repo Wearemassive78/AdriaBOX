@@ -128,7 +128,7 @@ class AdriaCLI:
         elif args.command == "logout":
             self._handle_logout()
         elif args.command == "upload":
-            print("Upload command not implemented yet.")
+            self._handle_upload(args.local_filepath, args.destination)
         elif args.command == "download":
             print("Download command not implemented yet.")
         elif args.command == "rm":
