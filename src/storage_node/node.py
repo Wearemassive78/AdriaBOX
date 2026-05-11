@@ -8,7 +8,7 @@ from flask import Flask, jsonify
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from common.tcp import handle_connection
+from common.tcp import FileReceiver
 
 
 app = Flask(__name__)
@@ -19,7 +19,8 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def handle_tcp_client(conn, addr, storage_dir=None):
-    return handle_connection(conn, storage_dir or DATA_DIR)
+    receiver = FileReceiver(conn, storage_dir or DATA_DIR)
+    return receiver.receive()
 
 
 def run_tcp_server(host, port):
