@@ -7,6 +7,9 @@ import socket
 import struct
 from .constants import CHUNK_SIZE
 
+ACK_OK = b"OK\n"
+ACK_ERROR = b"ERR\n"
+
 def recv_exact(conn, n):
     """Legge esattamente n byte dalla socket."""
     data = bytearray()
@@ -40,20 +43,20 @@ def send_file(host, port, filename):
             
     s.close()
 
-def send_bytes(host, port, remote_filename, data):
+def send_bytes(host, port, remote_filename, data, timeout=10.0):
     """Send an in-memory bytes payload to a storage node with a remote filename."""
-    s = socket.socket()
-    s.connect((host, port))
-
     encoded_name = os.path.basename(remote_filename).encode('utf-8')
     header = struct.pack('>I', len(encoded_name)) + encoded_name + struct.pack('>Q', len(data))
 
-    try:
+    with socket.create_connection((host, port), timeout=timeout) as s:
+        s.settimeout(timeout)
         s.sendall(header)
         if data:
             s.sendall(data)
-    finally:
-        s.close()
+
+        ack = recv_exact(s, len(ACK_OK))
+        if ack != ACK_OK:
+            raise ConnectionError(f"Storage node {host}:{port} did not confirm chunk write")
 
 def handle_connection(conn, storage_dir):
     """Handle an entry connection reading the binary file."""
@@ -68,6 +71,9 @@ def handle_connection(conn, storage_dir):
             filename = raw_name.decode('utf-8')
 
             raw_file_size = recv_exact(conn, 8)
+            if not raw_file_size:
+                conn.sendall(ACK_ERROR)
+                return
             file_size = struct.unpack('>Q', raw_file_size)[0]
 
             out_path = os.path.join(storage_dir, filename)
@@ -82,9 +88,26 @@ def handle_connection(conn, storage_dir):
                         break
                     f.write(chunk)
                     bytes_received += len(chunk)
-                    
+
+                f.flush()
+                os.fsync(f.fileno())
+
+            if bytes_received != file_size:
+                try:
+                    os.remove(out_path)
+                except OSError:
+                    pass
+                conn.sendall(ACK_ERROR)
+                return
+
+            conn.sendall(ACK_OK)
+
     except Exception as e:
         print(f"TCP connection error: {e}")
+        try:
+            conn.sendall(ACK_ERROR)
+        except OSError:
+            pass
         return
 
 
