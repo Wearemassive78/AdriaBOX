@@ -4,7 +4,7 @@ services:
     image: adriabox:latest
     command: python src/metadata_server/server.py
     environment:
-      ADRIABOX_STORAGE_NODES: "storage1:storage1:7001:storage1:7001,storage2:storage2:7002:storage2:7002,storage3:storage3:7003:storage3:7003"
+      ADRIABOX_STORAGE_NODES: "storage1:storage1:7001:localhost:7001,storage2:storage2:7002:localhost:7002,storage3:storage3:7003:localhost:7003"
     ports:
       - "5000:5000"
     depends_on:
