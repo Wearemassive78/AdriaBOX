@@ -1,134 +1,20 @@
+version: '3.8'
 services:
   metadata:
-    build: .
-    container_name: adriabox-metadata
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
     command: python src/metadata_server/server.py
-    environment:
-      PYTHONPATH: /app/src
     ports:
       - "5000:5000"
-    volumes:
-      - metadata-db:/app/data
 
   storage1:
-    build: .
-    container_name: adriabox-storage1
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./:/app
     command: python src/storage_node/node.py --http-port 6001 --tcp-port 7001
-    environment:
-      PYTHONPATH: /app/src
-      ADRIABOX_NODE_ID: storage1
-      ADRIABOX_NODE_HOST: storage1
-      ADRIABOX_CLIENT_HOST: localhost
-      ADRIABOX_DATA_DIR: /data
-      ADRIABOX_METADATA_URL: http://metadata:5000
     ports:
       - "6001:6001"
       - "7001:7001"
-    volumes:
-      - storage1-data:/data
-    depends_on:
-      - metadata
-
-  storage2:
-    build: .
-    container_name: adriabox-storage2
-    command: python src/storage_node/node.py --http-port 6002 --tcp-port 7002
-    environment:
-      PYTHONPATH: /app/src
-      ADRIABOX_NODE_ID: storage2
-      ADRIABOX_NODE_HOST: storage2
-      ADRIABOX_CLIENT_HOST: localhost
-      ADRIABOX_DATA_DIR: /data
-      ADRIABOX_METADATA_URL: http://metadata:5000
-    ports:
-      - "6002:6002"
-      - "7002:7002"
-    volumes:
-      - storage2-data:/data
-    depends_on:
-      - metadata
-
-  storage3:
-    build: .
-    container_name: adriabox-storage3
-    command: python src/storage_node/node.py --http-port 6003 --tcp-port 7003
-    environment:
-      PYTHONPATH: /app/src
-      ADRIABOX_NODE_ID: storage3
-      ADRIABOX_NODE_HOST: storage3
-      ADRIABOX_CLIENT_HOST: localhost
-      ADRIABOX_DATA_DIR: /data
-      ADRIABOX_METADATA_URL: http://metadata:5000
-    ports:
-      - "6003:6003"
-      - "7003:7003"
-    volumes:
-      - storage3-data:/data
-    depends_on:
-      - metadata
-
-  storage4:
-    build: .
-    container_name: adriabox-storage4
-    command: python src/storage_node/node.py --http-port 6004 --tcp-port 7004
-    environment:
-      PYTHONPATH: /app/src
-      ADRIABOX_NODE_ID: storage4
-      ADRIABOX_NODE_HOST: storage4
-      ADRIABOX_CLIENT_HOST: localhost
-      ADRIABOX_DATA_DIR: /data
-      ADRIABOX_METADATA_URL: http://metadata:5000
-    ports:
-      - "6004:6004"
-      - "7004:7004"
-    volumes:
-      - storage4-data:/data
-    depends_on:
-      - metadata
-
-  storage5:
-    build: .
-    container_name: adriabox-storage5
-    command: python src/storage_node/node.py --http-port 6005 --tcp-port 7005
-    environment:
-      PYTHONPATH: /app/src
-      ADRIABOX_NODE_ID: storage5
-      ADRIABOX_NODE_HOST: storage5
-      ADRIABOX_CLIENT_HOST: localhost
-      ADRIABOX_DATA_DIR: /data
-      ADRIABOX_METADATA_URL: http://metadata:5000
-    ports:
-      - "6005:6005"
-      - "7005:7005"
-    volumes:
-      - storage5-data:/data
-    depends_on:
-      - metadata
-
-  storage6:
-    build: .
-    container_name: adriabox-storage6
-    command: python src/storage_node/node.py --http-port 6006 --tcp-port 7006
-    environment:
-      PYTHONPATH: /app/src
-      ADRIABOX_NODE_ID: storage6
-      ADRIABOX_NODE_HOST: storage6
-      ADRIABOX_CLIENT_HOST: localhost
-      ADRIABOX_DATA_DIR: /data
-      ADRIABOX_METADATA_URL: http://metadata:5000
-    ports:
-      - "6006:6006"
-      - "7006:7006"
-    volumes:
-      - storage6-data:/data
-    depends_on:
-      - metadata
-
-volumes:
-  metadata-db:
-  storage1-data:
-  storage2-data:
-  storage3-data:
-  storage4-data:
-  storage5-data:
-  storage6-data:

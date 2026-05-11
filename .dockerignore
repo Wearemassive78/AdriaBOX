@@ -1,9 +1,0 @@
-.git
-.pytest_cache
-.vscode
-__pycache__
-*.pyc
-.adriabox_session
-metadata.db
-data
-report

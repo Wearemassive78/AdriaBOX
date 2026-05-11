@@ -2,19 +2,18 @@ from flask import Flask, request, jsonify
 import jwt
 import datetime
 import os
-import math
-import uuid
 from metadata_server.db import DatabaseManager
 
 class AdriaServer:
     """Master Node Web Server handling REST API requests."""
 
-    def __init__(self, db_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'metadata.db'), secret_key="super-secret-master-key-for-adriabox", db=None):
+    def __init__(self, db_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'metadata.db'), secret_key="super-secret-master-key-for-adriabox"):
         """
         Initializes the Flask application and the Database connection.
         """
         self.app = Flask(__name__)
-        self.db = db or DatabaseManager(db_path)
+        self.db = DatabaseManager(db_path)
+        self.app.add_url_rule('/upload', view_func=self.upload, methods=['POST'])
         
         # This key is used to cryptographically sign the JWT tokens.
         # In a real production environment, this should be an environment variable.
@@ -24,10 +23,6 @@ class AdriaServer:
         self.app.add_url_rule('/health', view_func=self.health, methods=['GET'])
         self.app.add_url_rule('/register', view_func=self.register, methods=['POST'])
         self.app.add_url_rule('/login', view_func=self.login, methods=['POST'])
-        self.app.add_url_rule('/nodes', view_func=self.list_nodes, methods=['GET'])
-        self.app.add_url_rule('/nodes', view_func=self.register_node, methods=['POST'])
-        self.app.add_url_rule('/files/upload-plan', view_func=self.create_upload_plan, methods=['POST'])
-        self.app.add_url_rule('/files/complete', view_func=self.complete_upload, methods=['POST'])
 
     def health(self):
         """Simple health check endpoint."""
@@ -86,103 +81,39 @@ class AdriaServer:
         else:
             return jsonify({"error": "Invalid credentials"}), 401
 
-    def register_node(self):
-        """Registers or refreshes a storage node in the cluster registry."""
-        data = request.json or {}
-        node_id = data.get('node_id')
-        host = data.get('host')
-        http_port = data.get('http_port')
-        tcp_port = data.get('tcp_port')
-
-        if not node_id or not host or not http_port or not tcp_port:
-            return jsonify({"error": "Missing node registration fields"}), 400
-
-        try:
-            node = self.db.register_storage_node(
-                node_id=node_id,
-                host=host,
-                http_port=int(http_port),
-                tcp_port=int(tcp_port),
-                status=data.get('status', 'active'),
-                client_host=data.get('client_host', 'localhost'),
-            )
-        except (TypeError, ValueError):
-            return jsonify({"error": "Invalid node port"}), 400
-
-        return jsonify(node), 201
-
-    def list_nodes(self):
-        """Lists registered storage nodes."""
-        return jsonify(self.db.list_storage_nodes())
-
-    def create_upload_plan(self):
-        """Creates a placement plan that splits a file across active storage nodes."""
+    def upload(self):
+        """
+        Handles the authorization request for a new file upload.
+        Decides which Storage Node will receive the data.
+        """
+        # For now, we don't strictly verify the JWT for simplicity, 
+        # but we could extract the user_id from it here.
         data = request.json or {}
         filename = data.get('filename')
-        size = data.get('size')
-        remote_dir = data.get('remote_dir', '/')
+        file_size = data.get('size')
 
-        if not filename or size is None:
-            return jsonify({"error": "Missing upload plan fields"}), 400
+        if not filename:
+            return jsonify({"error": "Missing filename"}), 400
 
+        # In a real distributed system, we would have a list of nodes 
+        # and pick the one with more free space. 
+        # For this laboratory, we point to our only active node.
+        target_node_ip = "127.0.0.1"
+        target_node_port = 7001
+
+        # Save metadata to DB (assuming owner_id 1 for now)
         try:
-            size = int(size)
-        except (TypeError, ValueError):
-            return jsonify({"error": "Invalid file size"}), 400
+            self.db.add_file(filename, chunks=1, owner_id=1)
+        except Exception as e:
+            return jsonify({"error": f"Database error: {e}"}), 500
 
-        nodes = [
-            node for node in self.db.list_storage_nodes()
-            if node.get('status') == 'active'
-        ]
-        if not nodes:
-            return jsonify({"error": "No active storage nodes available"}), 503
-
-        chunk_count = min(3, len(nodes), max(1, size))
-        chunk_size = math.ceil(size / chunk_count) if size else 0
-        file_id = str(uuid.uuid4())
-
-        chunks = []
-        for index in range(chunk_count):
-            node = nodes[index % len(nodes)]
-            offset = index * chunk_size
-            current_size = max(0, min(chunk_size, size - offset))
-            chunk_filename = f"{file_id}.chunk{index}"
-            chunks.append({
-                "index": index,
-                "offset": offset,
-                "size": current_size,
-                "chunk_filename": chunk_filename,
-                "node_id": node['node_id'],
-                "host": node['host'],
-                "client_host": node.get('client_host', 'localhost'),
-                "tcp_port": node['tcp_port'],
-            })
-
+        # Respond with the coordinates of the Storage Node
         return jsonify({
-            "file_id": file_id,
-            "filename": os.path.basename(filename),
-            "remote_path": os.path.join(remote_dir, os.path.basename(filename)).replace("\\", "/"),
-            "size": size,
-            "chunks": chunks,
-        })
+            "node_ip": target_node_ip,
+            "node_port": target_node_port,
+            "message": "Authorized"
+        }), 200
 
-    def complete_upload(self):
-        """Persists uploaded file metadata after all chunks have been stored."""
-        data = request.json or {}
-        required = ('file_id', 'filename', 'remote_path', 'size', 'chunks')
-        if any(data.get(field) is None for field in required):
-            return jsonify({"error": "Missing upload completion fields"}), 400
-
-        stored = self.db.save_stored_file(
-            file_id=data['file_id'],
-            filename=data['filename'],
-            remote_path=data['remote_path'],
-            size=int(data['size']),
-            sha256=data.get('sha256'),
-            chunks=data['chunks'],
-        )
-
-        return jsonify(stored), 201
 
     def run(self, host='0.0.0.0', port=5000):
         """Starts the Flask server loop (blocking call)."""
