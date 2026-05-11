@@ -3,9 +3,7 @@ import requests
 import jwt
 from client.session import SessionManager
 from client.config import load_client_config
-from client.validators import require_existing_file, require_metadata_url, require_text
-from common.hash import chunk_sha256, file_sha256
-from common.tcp import send_bytes
+from client.validators import require_metadata_url, require_text
 
 class AdriaClient:
     """Core logic for interacting with AdriaBOX cluster."""
@@ -97,68 +95,6 @@ class AdriaClient:
 
         return data
 
-    def upload(self, local_filepath, destination="/"):
-        """Uploads a local file by splitting it across storage nodes.
-
-        Temporarily disabled per user request. The original implementation
-        is commented out below and the method now raises
-        NotImplementedError to make the disabled state explicit.
-        """
-
-        # Temporarily disabled implementation (original code preserved as comments):
-        # local_filepath = require_existing_file(local_filepath)
-        # destination = destination or "/"
-        # filename = os.path.basename(local_filepath)
-        # file_size = os.path.getsize(local_filepath)
-        # plan_response = self.session.post(
-        #     f"{self.metadata_url}/files/upload-plan",
-        #     json={
-        #         "filename": filename,
-        #         "size": file_size,
-        #         "remote_dir": destination,
-        #     },
-        #     timeout=self.request_timeout,
-        # )
-        # plan_response.raise_for_status()
-        # plan = plan_response.json()
-        # uploaded_chunks = []
-        # with open(local_filepath, "rb") as source:
-        #     for chunk in plan["chunks"]:
-        #         source.seek(chunk["offset"])
-        #         data = source.read(chunk["size"])
-        #         send_bytes(
-        #             chunk["client_host"],
-        #             int(chunk["tcp_port"]),
-        #             chunk["chunk_filename"],
-        #             data,
-        #         )
-        #         uploaded_chunks.append({
-        #             "index": chunk["index"],
-        #             "chunk_filename": chunk["chunk_filename"],
-        #             "node_id": chunk["node_id"],
-        #             "host": chunk["host"],
-        #             "client_host": chunk["client_host"],
-        #             "tcp_port": int(chunk["tcp_port"]),
-        #             "size": len(data),
-        #             "sha256": chunk_sha256(data),
-        #         })
-        # complete_response = self.session.post(
-        #     f"{self.metadata_url}/files/complete",
-        #     json={
-        #         "file_id": plan["file_id"],
-        #         "filename": plan["filename"],
-        #         "remote_path": plan["remote_path"],
-        #         "size": file_size,
-        #         "sha256": file_sha256(local_filepath),
-        #         "chunks": uploaded_chunks,
-        #     },
-        #     timeout=self.request_timeout,
-        # )
-        # complete_response.raise_for_status()
-        # return complete_response.json()
-
-        raise NotImplementedError("Upload functionality disabled by user")
-
 
     def logout(self):
         """
@@ -172,3 +108,46 @@ class AdriaClient:
             del self.session.headers["Authorization"]
         
         self.session_manager.clear_session()
+
+
+    def upload(self, local_filepath, destination="/"):
+        """
+        Implements: adria upload <local_filepath> [-d <remote_dir>]
+        Handles the two-step upload process: metadata auth + TCP stream.
+        """
+        from client.validators import require_existing_file
+        import os
+
+        # 1. Validation
+        if not self.auth_token:
+            raise Exception("Authentication required. Please login first.")
+
+        # Ensure the file exists and is readable (C equivalent: checking access())
+        local_filepath = require_existing_file(local_filepath)
+        filename = os.path.basename(local_filepath)
+        file_size = os.path.getsize(local_filepath)
+
+        # 2. Authorization & Allocation (Talk to Master)
+        url = f"{self.metadata_url}/upload"
+        payload = {
+            "filename": filename,
+            "size": file_size,
+            "destination": destination
+        }
+        
+        # Request permission from Master Node
+        response = self.session.post(url, json=payload)
+        response.raise_for_status() 
+        
+        # Master responds with node coordinates
+        data = response.json()
+        primary_node_ip = data.get("node_ip")
+        primary_node_port = data.get("node_port")
+
+        # 3. Data Transfer (TCP Binary Stream)
+        # We delegate the raw byte streaming to our custom TCP implementation
+        from common.tcp import FileSender
+        sender = FileSender(primary_node_ip, primary_node_port)
+        sender.send(local_filepath)
+
+        return True

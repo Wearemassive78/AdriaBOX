@@ -250,16 +250,6 @@ class AdriaCLI:
         except Exception as e:
             print(f"Error during login: {e}")
 
-
-    def _handle_upload(self, local_filepath, destination):
-        print("Upload command not implemented yet.")
-        # Example implementation:
-        # try:
-        #     result = self.client.upload(local_filepath, destination)
-        #     print("File uploaded successfully.")
-        # except Exception as e:
-        #     print(f"Error during upload: {e}")
-
     def _handle_logout(self):
         try:
             self.client.logout()
@@ -289,6 +279,18 @@ class AdriaCLI:
 
         except Exception as e:
             print(f"Error: {e}")
+
+    def _handle_upload(self, local_filepath, destination):
+        try:
+            self.client.upload(local_filepath, destination)
+
+            if RICH_AVAILABLE and console:
+                console.print(f"[green]Successfully uploaded:[/green] {local_filepath}")
+            else:
+                print(f"Successfully uploaded: {local_filepath}")
+
+        except Exception as e:
+            print(f"Error during upload: {e}")
 
 
 def main():
