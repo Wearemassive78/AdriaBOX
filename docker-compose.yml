@@ -1,10 +1,8 @@
 services:
   metadata:
-    image: python:3.12-slim
-    working_dir: /app
-    volumes:
-      - ./:/app
-    command: sh -c "pip install -q -r requirements.txt && python src/metadata_server/server.py"
+    build: .
+    image: adriabox:latest
+    command: python src/metadata_server/server.py
     environment:
       ADRIABOX_STORAGE_NODES: "storage1:storage1:7001:storage1:7001,storage2:storage2:7002:storage2:7002,storage3:storage3:7003:storage3:7003"
     ports:
@@ -15,31 +13,25 @@ services:
       - storage3
 
   storage1:
-    image: python:3.12-slim
-    working_dir: /app
-    volumes:
-      - ./:/app
-    command: sh -c "pip install -q -r requirements.txt && python src/storage_node/node.py --http-port 6001 --tcp-port 7001 --storage-dir /app/data/storage1"
+    build: .
+    image: adriabox:latest
+    command: python src/storage_node/node.py --http-port 6001 --tcp-port 7001 --storage-dir /app/data/storage1
     ports:
       - "6001:6001"
       - "7001:7001"
 
   storage2:
-    image: python:3.12-slim
-    working_dir: /app
-    volumes:
-      - ./:/app
-    command: sh -c "pip install -q -r requirements.txt && python src/storage_node/node.py --http-port 6002 --tcp-port 7002 --storage-dir /app/data/storage2"
+    build: .
+    image: adriabox:latest
+    command: python src/storage_node/node.py --http-port 6002 --tcp-port 7002 --storage-dir /app/data/storage2
     ports:
       - "6002:6002"
       - "7002:7002"
 
   storage3:
-    image: python:3.12-slim
-    working_dir: /app
-    volumes:
-      - ./:/app
-    command: sh -c "pip install -q -r requirements.txt && python src/storage_node/node.py --http-port 6003 --tcp-port 7003 --storage-dir /app/data/storage3"
+    build: .
+    image: adriabox:latest
+    command: python src/storage_node/node.py --http-port 6003 --tcp-port 7003 --storage-dir /app/data/storage3
     ports:
       - "6003:6003"
       - "7003:7003"
