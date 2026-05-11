@@ -1,9 +1,11 @@
 import os
 import requests
 import jwt
+from common.hash import chunk_sha256, file_sha256
+from common.tcp import send_bytes
 from client.session import SessionManager
 from client.config import load_client_config
-from client.validators import require_metadata_url, require_text
+from client.validators import require_existing_file, require_metadata_url, require_text
 
 class AdriaClient:
     """Core logic for interacting with AdriaBOX cluster."""
@@ -98,16 +100,10 @@ class AdriaClient:
     def upload(self, local_filepath, destination="/"):
         """Uploads a local file by splitting it across storage nodes.
 
-        Temporarily disabled per user request. The original implementation
-        is commented out below and the method now raises
-        NotImplementedError to make the disabled state explicit.
+        The metadata server returns a plan that maps each byte range to one
+        storage node. The client streams each chunk over TCP, waits for an ACK,
+        then confirms the completed upload over HTTP.
         """
-
-        # Full upload flow: request an upload plan from the metadata server Max solution,
-        # stream chunks over TCP to storage nodes, then complete the upload.
-        # This restores the implementation that was previously commented out.
-
-        # 1. Validation
         if not self.auth_token:
             raise Exception("Authentication required. Please login first.")
 
@@ -140,6 +136,7 @@ class AdriaClient:
                     int(chunk["tcp_port"]),
                     chunk["chunk_filename"],
                     data,
+                    timeout=self.request_timeout,
                 )
                 uploaded_chunks.append({
                     "index": chunk["index"],
@@ -168,7 +165,6 @@ class AdriaClient:
         complete_response.raise_for_status()
         return complete_response.json()
 
-
     def logout(self):
         """
         Implements: adria logout
@@ -181,46 +177,3 @@ class AdriaClient:
             del self.session.headers["Authorization"]
         
         self.session_manager.clear_session()
-
-
-    def upload(self, local_filepath, destination="/"):
-        """
-        Implements: adria upload <local_filepath> [-d <remote_dir>]
-        Handles the two-step upload process: metadata auth + TCP stream.
-        """
-        from client.validators import require_existing_file
-        import os
-
-        # 1. Validation
-        if not self.auth_token:
-            raise Exception("Authentication required. Please login first.")
-
-        # Ensure the file exists and is readable (C equivalent: checking access())
-        local_filepath = require_existing_file(local_filepath)
-        filename = os.path.basename(local_filepath)
-        file_size = os.path.getsize(local_filepath)
-
-        # 2. Authorization & Allocation (Talk to Master)
-        url = f"{self.metadata_url}/upload"
-        payload = {
-            "filename": filename,
-            "size": file_size,
-            "destination": destination
-        }
-        
-        # Request permission from Master Node
-        response = self.session.post(url, json=payload)
-        response.raise_for_status() 
-        
-        # Master responds with node coordinates
-        data = response.json()
-        primary_node_ip = data.get("node_ip")
-        primary_node_port = data.get("node_port")
-
-        # 3. Data Transfer (TCP Binary Stream)
-        # We delegate the raw byte streaming to our custom TCP implementation
-        from common.tcp import FileSender
-        sender = FileSender(primary_node_ip, primary_node_port)
-        sender.send(local_filepath)
-
-        return True

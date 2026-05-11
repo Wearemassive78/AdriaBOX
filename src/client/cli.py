@@ -314,19 +314,6 @@ class AdriaCLI:
         except Exception as e:
             print(f"Error: {e}")
 
-    def _handle_upload(self, local_filepath, destination):
-        try:
-            self.client.upload(local_filepath, destination)
-
-            if RICH_AVAILABLE and console:
-                console.print(f"[green]Successfully uploaded:[/green] {local_filepath}")
-            else:
-                print(f"Successfully uploaded: {local_filepath}")
-
-        except Exception as e:
-            print(f"Error during upload: {e}")
-
-
 def main():
     if RICH_AVAILABLE and console:
         console.print(Markdown("# :anchor: AdriaBOX\nA compact CLI for the AdriaBOX project."))

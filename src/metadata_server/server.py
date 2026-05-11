@@ -1,126 +1,229 @@
-from flask import Flask, request, jsonify
-import jwt
 import datetime
+import math
 import os
+import sys
+
+from flask import Flask, jsonify, request
+import jwt
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from common.constants import CHUNK_SIZE
 from metadata_server.db import DatabaseManager
+
+
+DEFAULT_DB_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "data",
+    "metadata.db",
+)
+
+
+def load_storage_nodes():
+    """Load storage nodes from env or return the local Docker demo topology."""
+    raw_nodes = os.environ.get("ADRIABOX_STORAGE_NODES")
+    if raw_nodes:
+        nodes = []
+        for index, item in enumerate(raw_nodes.split(","), start=1):
+            parts = item.split(":")
+            if len(parts) != 5:
+                raise ValueError(
+                    "ADRIABOX_STORAGE_NODES items must be "
+                    "node_id:host:tcp_port:client_host:client_tcp_port"
+                )
+            node_id, host, tcp_port, client_host, client_tcp_port = parts
+            nodes.append({
+                "node_id": node_id,
+                "host": host,
+                "tcp_port": int(tcp_port),
+                "client_host": client_host,
+                "client_tcp_port": int(client_tcp_port),
+            })
+        return nodes
+
+    return [
+        {
+            "node_id": "storage1",
+            "host": "storage1",
+            "tcp_port": 7001,
+            "client_host": "127.0.0.1",
+            "client_tcp_port": 7001,
+        },
+        {
+            "node_id": "storage2",
+            "host": "storage2",
+            "tcp_port": 7002,
+            "client_host": "127.0.0.1",
+            "client_tcp_port": 7002,
+        },
+        {
+            "node_id": "storage3",
+            "host": "storage3",
+            "tcp_port": 7003,
+            "client_host": "127.0.0.1",
+            "client_tcp_port": 7003,
+        },
+    ]
+
 
 class AdriaServer:
     """Master Node Web Server handling REST API requests."""
 
-    def __init__(self, db_path=os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'metadata.db'), secret_key="super-secret-master-key-for-adriabox"):
-        """
-        Initializes the Flask application and the Database connection.
-        """
+    def __init__(self, db_path=DEFAULT_DB_PATH, secret_key="super-secret-master-key-for-adriabox"):
         self.app = Flask(__name__)
         self.db = DatabaseManager(db_path)
-        self.app.add_url_rule('/upload', view_func=self.upload, methods=['POST'])
-        
-        # This key is used to cryptographically sign the JWT tokens.
-        # In a real production environment, this should be an environment variable.
         self.secret_key = secret_key
-        
-        # Mapping URLs to class methods (similar to mapping function pointers in C)
-        self.app.add_url_rule('/health', view_func=self.health, methods=['GET'])
-        self.app.add_url_rule('/register', view_func=self.register, methods=['POST'])
-        self.app.add_url_rule('/login', view_func=self.login, methods=['POST'])
+        self.storage_nodes = load_storage_nodes()
+
+        self.app.add_url_rule("/health", view_func=self.health, methods=["GET"])
+        self.app.add_url_rule("/register", view_func=self.register, methods=["POST"])
+        self.app.add_url_rule("/login", view_func=self.login, methods=["POST"])
+        self.app.add_url_rule("/upload", view_func=self.upload, methods=["POST"])
+        self.app.add_url_rule(
+            "/files/upload-plan",
+            view_func=self.create_upload_plan,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/files/complete",
+            view_func=self.complete_upload,
+            methods=["POST"],
+        )
 
     def health(self):
-        """Simple health check endpoint."""
-        return jsonify({'status': 'ok'})
+        return jsonify({"status": "ok", "nodes": self.storage_nodes})
 
     def register(self):
-        """
-        Handles: Client -> Master: Request Register (Username, Plain Password)
-        """
         data = request.json or {}
-        username = data.get('username')
-        password = data.get('password')
+        username = data.get("username")
+        password = data.get("password")
 
         if not username or not password:
             return jsonify({"error": "Missing credentials"}), 400
-            
+
         try:
-            # The DB manager handles the bcrypt hashing internally
             self.db.register_user(username, password)
-            # Master returns 201 Created
             return jsonify({"message": "User registered"}), 201
         except ValueError:
             return jsonify({"error": "Username already exists"}), 409
 
     def login(self):
-        """
-        Handles: Client -> Master: Request Login (Username, Plain Password)
-        """
         data = request.json or {}
-        username = data.get('username')
-        password = data.get('password')
+        username = data.get("username")
+        password = data.get("password")
 
         if not username or not password:
             return jsonify({"error": "Missing credentials"}), 400
-            
-        # Check hashes in DB; verify_user now returns a dict with id, username, role
+
         user = self.db.verify_user(username, password)
 
-        if user:
-            # Generate the stateless JWT Token including username and role
-            payload = {
-                'user_id': user['id'],
-                'username': user['username'],
-                'role': user.get('role', 'user'),
-                # The token will expire in 24 hours
-                'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24)
-            }
-            token = jwt.encode(payload, self.secret_key, algorithm='HS256')
-
-            # Ensure token is a str for JSON transport (pyjwt may return bytes)
-            if isinstance(token, bytes):
-                token = token.decode('utf-8')
-
-            # Master returns 200 OK (Auth Token) and user info
-            return jsonify({"token": token, "username": user['username'], "role": user.get('role', 'user')}), 200
-        else:
+        if not user:
             return jsonify({"error": "Invalid credentials"}), 401
 
+        payload = {
+            "user_id": user["id"],
+            "username": user["username"],
+            "role": user.get("role", "user"),
+            "exp": datetime.datetime.now(datetime.timezone.utc)
+            + datetime.timedelta(hours=24),
+        }
+        token = jwt.encode(payload, self.secret_key, algorithm="HS256")
+
+        if isinstance(token, bytes):
+            token = token.decode("utf-8")
+
+        return jsonify({
+            "token": token,
+            "username": user["username"],
+            "role": user.get("role", "user"),
+        }), 200
+
     def upload(self):
-        """
-        Handles the authorization request for a new file upload.
-        Decides which Storage Node will receive the data.
-        """
-        # For now, we don't strictly verify the JWT for simplicity, 
-        # but we could extract the user_id from it here.
+        """Backward-compatible single-node upload authorization endpoint."""
         data = request.json or {}
-        filename = data.get('filename')
-        file_size = data.get('size')
+        filename = data.get("filename")
 
         if not filename:
             return jsonify({"error": "Missing filename"}), 400
 
-        # In a real distributed system, we would have a list of nodes 
-        # and pick the one with more free space. 
-        # For this laboratory, we point to our only active node.
-        target_node_ip = "127.0.0.1"
-        target_node_port = 7001
-
-        # Save metadata to DB (assuming owner_id 1 for now)
-        try:
-            self.db.add_file(filename, chunks=1, owner_id=1)
-        except Exception as e:
-            return jsonify({"error": f"Database error: {e}"}), 500
-
-        # Respond with the coordinates of the Storage Node
+        node = self.storage_nodes[0]
+        self.db.add_file(filename, chunks=1, owner_id=1)
         return jsonify({
-            "node_ip": target_node_ip,
-            "node_port": target_node_port,
-            "message": "Authorized"
+            "node_ip": node["client_host"],
+            "node_port": node["client_tcp_port"],
+            "message": "Authorized",
         }), 200
 
+    def create_upload_plan(self):
+        data = request.json or {}
+        filename = data.get("filename")
+        file_size = int(data.get("size") or 0)
+        remote_dir = data.get("remote_dir") or "/"
 
-    def run(self, host='0.0.0.0', port=5000):
-        """Starts the Flask server loop (blocking call)."""
+        if not filename:
+            return jsonify({"error": "Missing filename"}), 400
+        if file_size < 0:
+            return jsonify({"error": "Invalid size"}), 400
+
+        node_count = len(self.storage_nodes)
+        if file_size == 0:
+            chunk_count = 1
+        else:
+            chunk_count = min(node_count, max(1, math.ceil(file_size / CHUNK_SIZE)))
+            if file_size >= node_count:
+                chunk_count = node_count
+
+        base_size = file_size // chunk_count if chunk_count else 0
+        remainder = file_size % chunk_count if chunk_count else 0
+        file_id = self.db.add_file(filename, chunks=chunk_count, owner_id=1)
+
+        chunks = []
+        offset = 0
+        for index in range(chunk_count):
+            node = self.storage_nodes[index % node_count]
+            size = base_size + (1 if index < remainder else 0)
+            chunk_filename = f"{file_id}_{index}_{os.path.basename(filename)}.chunk"
+            chunks.append({
+                "index": index,
+                "offset": offset,
+                "size": size,
+                "chunk_filename": chunk_filename,
+                "node_id": node["node_id"],
+                "host": node["host"],
+                "tcp_port": node["client_tcp_port"],
+                "client_host": node["client_host"],
+            })
+            offset += size
+
+        return jsonify({
+            "file_id": file_id,
+            "filename": filename,
+            "remote_path": os.path.join(remote_dir, filename).replace("\\", "/"),
+            "size": file_size,
+            "chunks": chunks,
+        }), 200
+
+    def complete_upload(self):
+        data = request.json or {}
+        required = ("file_id", "filename", "chunks")
+        missing = [field for field in required if field not in data]
+        if missing:
+            return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+
+        return jsonify({
+            "message": "Upload completed",
+            "file_id": data["file_id"],
+            "filename": data["filename"],
+            "remote_path": data.get("remote_path"),
+            "size": data.get("size"),
+            "sha256": data.get("sha256"),
+            "chunks": data["chunks"],
+        }), 200
+
+    def run(self, host="0.0.0.0", port=5000):
         self.app.run(host=host, port=port, debug=True)
 
-if __name__ == '__main__':
-    # Entry point for the Master Server
+
+if __name__ == "__main__":
     server = AdriaServer()
     server.run()
-
