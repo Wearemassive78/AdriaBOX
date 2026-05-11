@@ -13,6 +13,7 @@ class AdriaServer:
         """
         self.app = Flask(__name__)
         self.db = DatabaseManager(db_path)
+        self.app.add_url_rule('/upload', view_func=self.upload, methods=['POST'])
         
         # This key is used to cryptographically sign the JWT tokens.
         # In a real production environment, this should be an environment variable.
@@ -79,6 +80,40 @@ class AdriaServer:
             return jsonify({"token": token, "username": user['username'], "role": user.get('role', 'user')}), 200
         else:
             return jsonify({"error": "Invalid credentials"}), 401
+
+    def upload(self):
+        """
+        Handles the authorization request for a new file upload.
+        Decides which Storage Node will receive the data.
+        """
+        # For now, we don't strictly verify the JWT for simplicity, 
+        # but we could extract the user_id from it here.
+        data = request.json or {}
+        filename = data.get('filename')
+        file_size = data.get('size')
+
+        if not filename:
+            return jsonify({"error": "Missing filename"}), 400
+
+        # In a real distributed system, we would have a list of nodes 
+        # and pick the one with more free space. 
+        # For this laboratory, we point to our only active node.
+        target_node_ip = "127.0.0.1"
+        target_node_port = 7001
+
+        # Save metadata to DB (assuming owner_id 1 for now)
+        try:
+            self.db.add_file(filename, chunks=1, owner_id=1)
+        except Exception as e:
+            return jsonify({"error": f"Database error: {e}"}), 500
+
+        # Respond with the coordinates of the Storage Node
+        return jsonify({
+            "node_ip": target_node_ip,
+            "node_port": target_node_port,
+            "message": "Authorized"
+        }), 200
+
 
     def run(self, host='0.0.0.0', port=5000):
         """Starts the Flask server loop (blocking call)."""

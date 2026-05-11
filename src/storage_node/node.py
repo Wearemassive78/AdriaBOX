@@ -14,9 +14,19 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 
 def handle_tcp_client(conn, addr, storage_dir=DATA_DIR):
-    # Delegate to common handler to keep protocol consistent
-    from common.tcp import handle_connection
-    return handle_connection(conn, storage_dir)
+    """
+    Handles an incoming TCP connection from a client.
+    Instantiates a FileReceiver to process the custom binary protocol.
+    """
+    #import the receiver Class
+    from common.tcp import FileReceiver
+    
+    # Instantiate the receiver with the active connection and data directory
+    receiver = FileReceiver(conn, storage_dir)
+    
+    # Execute the reception process
+    return receiver.receive()
+
 
 def run_tcp_server(host, port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

@@ -93,3 +93,20 @@ class DatabaseManager:
 
             return None
 
+    def add_file(self, filename, chunks, owner_id):
+        """
+        Records file metadata in the SQL database.
+        Equivalent to an INSERT statement in C with sqlite3_prepare_v2.
+        """
+        from datetime import datetime
+        created_at = datetime.now().isoformat()
+        
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                'INSERT INTO files (filename, chunks, created_at, owner_id) VALUES (?, ?, ?, ?)',
+                (filename, chunks, created_at, owner_id)
+            )
+            conn.commit()
+            return cur.lastrowid
+
