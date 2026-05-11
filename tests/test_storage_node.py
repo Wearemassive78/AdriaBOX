@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from common.tcp import ACK_ERROR, ACK_OK, create_server_socket, handle_connection, send_bytes
+from common.tcp import ACK_ERROR, ACK_OK, create_server_socket, FileReceiver, BytesSender
 
 
 def _start_one_shot_storage(tmp_path):
@@ -13,7 +13,7 @@ def _start_one_shot_storage(tmp_path):
     def serve_once():
         try:
             conn, _ = server.accept()
-            handle_connection(conn, str(tmp_path))
+            FileReceiver(conn, str(tmp_path)).receive()
         finally:
             server.close()
 
@@ -25,7 +25,7 @@ def _start_one_shot_storage(tmp_path):
 def test_send_bytes_waits_for_storage_ack_after_writing_file(tmp_path):
     host, port, thread = _start_one_shot_storage(tmp_path)
 
-    send_bytes(host, port, "demo.chunk0", b"hello world")
+    BytesSender(host, port).send("demo.chunk0", b"hello world")
     thread.join(timeout=2)
 
     assert (tmp_path / "demo.chunk0").read_bytes() == b"hello world"
@@ -48,7 +48,7 @@ def test_send_bytes_raises_when_storage_does_not_confirm():
     thread.start()
 
     with pytest.raises(ConnectionError):
-        send_bytes(host, port, "demo.chunk0", b"hello world")
+        BytesSender(host, port).send("demo.chunk0", b"hello world")
 
     thread.join(timeout=2)
 
@@ -57,9 +57,12 @@ def test_handle_connection_sends_ok_only_after_complete_payload(tmp_path):
     server_sock, client_sock = socket.socketpair()
 
     try:
+        def run_receiver():
+            receiver = FileReceiver(server_sock, str(tmp_path))
+            receiver.receive()
+
         thread = threading.Thread(
-            target=handle_connection,
-            args=(server_sock, str(tmp_path)),
+            target=run_receiver,
             daemon=True,
         )
         thread.start()
