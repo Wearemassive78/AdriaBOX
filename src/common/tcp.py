@@ -75,6 +75,37 @@ class BytesSender(AdriaTCPStreamer):
             if ack != self.ACK_OK:
                 raise ConnectionError(f"Storage node {self.host}:{self.port} did not confirm chunk write")
 
+class ChunkStreamSender(AdriaTCPStreamer):
+    """Encapsulates the logic for streaming a specific block of a file to a node."""
+
+    def __init__(self, host, port, timeout=10.0):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+
+    def send(self, file_descriptor, remote_filename, size_to_send):
+        """Streams exactly 'size_to_send' bytes from the open file descriptor."""
+        encoded_name = os.path.basename(remote_filename).encode('utf-8')
+        header = struct.pack('>I', len(encoded_name)) + encoded_name + struct.pack('>Q', size_to_send)
+
+        with socket.create_connection((self.host, self.port), timeout=self.timeout) as s:
+            s.sendall(header)
+            
+            bytes_sent = 0
+            while bytes_sent < size_to_send:
+                # Read at most CHUNK_SIZE (4KB) at a time to prevent memory leaks
+                read_size = min(CHUNK_SIZE, size_to_send - bytes_sent)
+                data = file_descriptor.read(read_size)
+                if not data:
+                    break
+                s.sendall(data)
+                bytes_sent += len(data)
+
+            # Wait for node confirmation
+            ack = self._recv_exact(s, len(self.ACK_OK))
+            if ack != self.ACK_OK:
+                raise ConnectionError(f"Storage node {self.host}:{self.port} did not confirm chunk write")
+
 class FileReceiver(AdriaTCPStreamer):
     """Encapsulates the logic for receiving and saving a file on a storage node."""
     
