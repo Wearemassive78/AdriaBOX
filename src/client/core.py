@@ -136,7 +136,7 @@ class AdriaClient:
                     int(chunk["tcp_port"]),
                     timeout=self.request_timeout
                 )
-                sender.send(source, chunk["chunk_filename"], chunk["size"])
+                chunk_hash = sender.send(source, chunk["chunk_filename"], chunk["size"])
 
                 uploaded_chunks.append({
                     "index": chunk["index"],
@@ -146,7 +146,7 @@ class AdriaClient:
                     "client_host": chunk.get("client_host"),
                     "tcp_port": int(chunk.get("tcp_port")),
                     "size": chunk["size"],
-                    "sha256": "pending",
+                    "sha256": chunk_hash,
                 })
 
         # 4. Notify metadata server that upload is complete

@@ -1,4 +1,5 @@
 """TCP helpers for sending and receiving files via AdriaBOX custom protocol."""
+import hashlib
 import os
 import socket
 import struct
@@ -84,27 +85,35 @@ class ChunkStreamSender(AdriaTCPStreamer):
         self.timeout = timeout
 
     def send(self, file_descriptor, remote_filename, size_to_send):
-        """Streams exactly 'size_to_send' bytes from the open file descriptor."""
+        """Streams exactly 'size_to_send' bytes and calculates SHA-256 on the fly."""
         encoded_name = os.path.basename(remote_filename).encode('utf-8')
         header = struct.pack('>I', len(encoded_name)) + encoded_name + struct.pack('>Q', size_to_send)
+        
+        # Inizializziamo il calcolatore di Hash vuoto
+        hasher = hashlib.sha256()
 
         with socket.create_connection((self.host, self.port), timeout=self.timeout) as s:
             s.sendall(header)
             
             bytes_sent = 0
             while bytes_sent < size_to_send:
-                # Read at most CHUNK_SIZE (4KB) at a time to prevent memory leaks
                 read_size = min(CHUNK_SIZE, size_to_send - bytes_sent)
                 data = file_descriptor.read(read_size)
                 if not data:
                     break
+                
+                # "Diamo in pasto" i 4KB all'algoritmo di sicurezza
+                hasher.update(data)
+                
                 s.sendall(data)
                 bytes_sent += len(data)
 
-            # Wait for node confirmation
             ack = self._recv_exact(s, len(self.ACK_OK))
             if ack != self.ACK_OK:
                 raise ConnectionError(f"Storage node {self.host}:{self.port} did not confirm chunk write")
+            
+            # Restituiamo la firma crittografica calcolata
+            return hasher.hexdigest()
 
 class FileReceiver(AdriaTCPStreamer):
     """Encapsulates the logic for receiving and saving a file on a storage node."""
