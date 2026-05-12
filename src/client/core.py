@@ -2,7 +2,7 @@ import os
 import requests
 import jwt
 from common.hash import chunk_sha256, file_sha256
-from common.tcp import BytesSender, ChunkStreamerSender
+from common.tcp import BytesSender, ChunkStreamSender
 from client.session import SessionManager
 from client.config import load_client_config
 from client.validators import require_existing_file, require_metadata_url, require_text
