@@ -11,13 +11,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from common.constants import CHUNK_SIZE
 from metadata_server.db import DatabaseManager
 
-
 DEFAULT_DB_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
     "data",
     "metadata.db",
 )
-
 
 def load_storage_nodes():
     """Load storage nodes from env or return the local Docker demo topology."""
@@ -27,10 +25,7 @@ def load_storage_nodes():
         for index, item in enumerate(raw_nodes.split(","), start=1):
             parts = item.split(":")
             if len(parts) != 5:
-                raise ValueError(
-                    "ADRIABOX_STORAGE_NODES items must be "
-                    "node_id:host:tcp_port:client_host:client_tcp_port"
-                )
+                raise ValueError("ADRIABOX_STORAGE_NODES items must be node_id:host:tcp_port:client_host:client_tcp_port")
             node_id, host, tcp_port, client_host, client_tcp_port = parts
             nodes.append({
                 "node_id": node_id,
@@ -42,29 +37,10 @@ def load_storage_nodes():
         return nodes
 
     return [
-        {
-            "node_id": "storage1",
-            "host": "storage1",
-            "tcp_port": 7001,
-            "client_host": "127.0.0.1",
-            "client_tcp_port": 7001,
-        },
-        {
-            "node_id": "storage2",
-            "host": "storage2",
-            "tcp_port": 7002,
-            "client_host": "127.0.0.1",
-            "client_tcp_port": 7002,
-        },
-        {
-            "node_id": "storage3",
-            "host": "storage3",
-            "tcp_port": 7003,
-            "client_host": "127.0.0.1",
-            "client_tcp_port": 7003,
-        },
+        {"node_id": "storage1", "host": "storage1", "tcp_port": 7001, "client_host": "127.0.0.1", "client_tcp_port": 7001},
+        {"node_id": "storage2", "host": "storage2", "tcp_port": 7002, "client_host": "127.0.0.1", "client_tcp_port": 7002},
+        {"node_id": "storage3", "host": "storage3", "tcp_port": 7003, "client_host": "127.0.0.1", "client_tcp_port": 7003},
     ]
-
 
 class AdriaServer:
     """Master Node Web Server handling REST API requests."""
@@ -79,16 +55,9 @@ class AdriaServer:
         self.app.add_url_rule("/register", view_func=self.register, methods=["POST"])
         self.app.add_url_rule("/login", view_func=self.login, methods=["POST"])
         self.app.add_url_rule("/upload", view_func=self.upload, methods=["POST"])
-        self.app.add_url_rule(
-            "/files/upload-plan",
-            view_func=self.create_upload_plan,
-            methods=["POST"],
-        )
-        self.app.add_url_rule(
-            "/files/complete",
-            view_func=self.complete_upload,
-            methods=["POST"],
-        )
+        self.app.add_url_rule("/files/upload-plan", view_func=self.create_upload_plan, methods=["POST"])
+        self.app.add_url_rule("/files/complete", view_func=self.complete_upload, methods=["POST"])
+        self.app.add_url_rule("/files/download-plan", view_func=self.create_download_plan, methods=["GET"])
 
     def health(self):
         return jsonify({"status": "ok", "nodes": self.storage_nodes})
@@ -124,35 +93,23 @@ class AdriaServer:
             "user_id": user["id"],
             "username": user["username"],
             "role": user.get("role", "user"),
-            "exp": datetime.datetime.now(datetime.timezone.utc)
-            + datetime.timedelta(hours=24),
+            "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=24),
         }
         token = jwt.encode(payload, self.secret_key, algorithm="HS256")
-
         if isinstance(token, bytes):
             token = token.decode("utf-8")
 
-        return jsonify({
-            "token": token,
-            "username": user["username"],
-            "role": user.get("role", "user"),
-        }), 200
+        return jsonify({"token": token, "username": user["username"], "role": user.get("role", "user")}), 200
 
     def upload(self):
-        """Backward-compatible single-node upload authorization endpoint."""
         data = request.json or {}
         filename = data.get("filename")
-
         if not filename:
             return jsonify({"error": "Missing filename"}), 400
 
         node = self.storage_nodes[0]
-        self.db.add_file(filename, chunks=1, owner_id=1)
-        return jsonify({
-            "node_ip": node["client_host"],
-            "node_port": node["client_tcp_port"],
-            "message": "Authorized",
-        }), 200
+        self.db.add_file(filename, size=0, chunks=1, owner_id=1)
+        return jsonify({"node_ip": node["client_host"], "node_port": node["client_tcp_port"], "message": "Authorized"}), 200
 
     def create_upload_plan(self):
         data = request.json or {}
@@ -175,7 +132,9 @@ class AdriaServer:
 
         base_size = file_size // chunk_count if chunk_count else 0
         remainder = file_size % chunk_count if chunk_count else 0
-        file_id = self.db.add_file(filename, chunks=chunk_count, owner_id=1)
+        
+        # FIXED: Passing file_size to add_file
+        file_id = self.db.add_file(filename, file_size, chunk_count, owner_id=1)
 
         chunks = []
         offset = 0
@@ -203,6 +162,36 @@ class AdriaServer:
             "chunks": chunks,
         }), 200
 
+    def create_download_plan(self):
+        filename = request.args.get("filename")
+        if not filename:
+            return jsonify({"error": "Missing filename parameter"}), 400
+
+        file_info = self.db.get_file_by_name(filename)
+        if not file_info:
+            return jsonify({"error": "File not found"}), 404
+
+        chunks_data = self.db.get_chunks_by_file_id(file_info["id"])
+        
+        plan_chunks = []
+        for c in chunks_data:
+            node_cfg = next((n for n in self.storage_nodes if n["node_id"] == c["node_id"]), self.storage_nodes[0])
+            plan_chunks.append({
+                "index": c["chunk_index"],
+                "chunk_filename": c["chunk_filename"],
+                "node_id": c["node_id"],
+                "client_host": node_cfg["client_host"],
+                "tcp_port": node_cfg["client_tcp_port"],
+                "size": c["size"] # FIXED: Passing size to the client
+            })
+
+        return jsonify({
+            "file_id": file_info["id"],
+            "filename": filename,
+            "size": file_info["size"],
+            "chunks": plan_chunks
+        }), 200
+
     def complete_upload(self):
         data = request.json or {}
         required = ("file_id", "filename", "chunks")
@@ -210,9 +199,21 @@ class AdriaServer:
         if missing:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
 
+        file_id = data["file_id"]
+        
+        for chunk in data["chunks"]:
+            # FIXED: Passing the chunk size to the database
+            self.db.save_chunk_metadata(
+                file_id=file_id,
+                chunk_index=chunk["index"],
+                node_id=chunk["node_id"],
+                chunk_filename=chunk["chunk_filename"],
+                size=chunk["size"]
+            )
+
         return jsonify({
             "message": "Upload completed",
-            "file_id": data["file_id"],
+            "file_id": file_id,
             "filename": data["filename"],
             "remote_path": data.get("remote_path"),
             "size": data.get("size"),
@@ -222,7 +223,6 @@ class AdriaServer:
 
     def run(self, host="0.0.0.0", port=5000):
         self.app.run(host=host, port=port, debug=True)
-
 
 if __name__ == "__main__":
     server = AdriaServer()

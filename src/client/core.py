@@ -2,7 +2,7 @@ import os
 import requests
 import jwt
 from common.hash import chunk_sha256, file_sha256
-from common.tcp import BytesSender, ChunkStreamSender
+from common.tcp import ChunkStreamSender
 from client.session import SessionManager
 from client.config import load_client_config
 from client.validators import require_existing_file, require_metadata_url, require_text
@@ -164,6 +164,48 @@ class AdriaClient:
         )
         complete_response.raise_for_status()
         return complete_response.json()
+
+    def download(self, filename, local_destination=None):
+        """
+        Downloads a file by fetching the chunk map from the master
+        and streaming data directly from the storage nodes.
+        """
+        if not self.auth_token:
+            raise Exception("Authentication required. Please login first.")
+
+        # Default destination is current working directory
+        if not local_destination:
+            local_destination = os.path.join(os.getcwd(), filename)
+
+        from common.tcp import ChunkDownloader
+
+        # 1. Request the download plan from the metadata server
+        plan_response = self.session.get(
+            f"{self.metadata_url}/files/download-plan",
+            params={"filename": filename},
+            timeout=self.request_timeout,
+        )
+        plan_response.raise_for_status()
+        plan = plan_response.json()
+
+        chunks = plan.get("chunks", [])
+        if not chunks:
+            raise Exception("File is empty or no chunks found.")
+
+        # 2. Rebuild the file by connecting to nodes sequentially
+        print(f"Downloading {filename} ({plan.get('size')} bytes) in {len(chunks)} chunks...")
+        
+        with open(local_destination, "wb") as dest_file:
+            for chunk in chunks:
+                downloader = ChunkDownloader(
+                    chunk["client_host"],
+                    int(chunk["tcp_port"]),
+                    timeout=self.request_timeout
+                )
+                # Stream the 4KB buffers straight to disk
+                downloader.download(chunk["chunk_filename"], dest_file, chunk["size"])
+
+        return local_destination
 
     def logout(self):
         """

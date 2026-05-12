@@ -63,10 +63,11 @@ class AdriaCLI:
         upload_parser.add_argument("-d", "--destination", default="/", help="Remote destination folder")
         self.commands_info["upload"] = upload_help
 
-        download_help = "adria download <remote_filepath> [-o <local_output_path>]\nRetrieves a file."
+        # CHANGED: Download command configuration
+        download_help = "adria download <filename> [-d <local_dest>]\nDownloads a file from the cluster."
         download_parser = self.subparsers.add_parser("download", help=download_help)
-        download_parser.add_argument("remote_filepath")
-        download_parser.add_argument("-o", "--output", help="Local save path")
+        download_parser.add_argument("filename")
+        download_parser.add_argument("-d", "--destination", default=None, help="Local directory to save the file")
         self.commands_info["download"] = download_help
 
         rm_help = "adria rm <remote_filepath>\nPermanently deletes a file."
@@ -129,8 +130,16 @@ class AdriaCLI:
             self._handle_logout()
         elif args.command == "upload":
             self._handle_upload(args.local_filepath, args.destination)
+        # CHANGED: Added logic to call download method
         elif args.command == "download":
-            print("Download command not implemented yet.")
+            try:
+                dest = self.client.download(args.filename, args.destination)
+                if RICH_AVAILABLE and console:
+                    console.print(f"[green]Successfully downloaded to:[/green] {dest}")
+                else:
+                    print(f"Successfully downloaded to: {dest}")
+            except Exception as e:
+                print(f"Error during download: {e}")
         elif args.command == "rm":
             print("Remove command not implemented yet.")
         elif args.command == "mv":

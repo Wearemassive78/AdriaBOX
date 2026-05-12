@@ -20,8 +20,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 def handle_tcp_client(conn, addr, storage_dir=None):
     receiver = FileReceiver(conn, storage_dir or DATA_DIR)
-    return receiver.receive()
-
+    return receiver.serve()
 
 def run_tcp_server(host, port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
