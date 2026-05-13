@@ -21,18 +21,20 @@ class AdriaClient:
         if session_data and "token" in session_data:
             self.auth_token = session_data["token"]
             self.current_username = session_data.get("username")
+            self.current_role = session_data.get("role", "user")
             self.crypto_key = session_data.get("crypto_key")
             self.session.headers.update({"Authorization": f"Bearer {self.auth_token}"})
         else:
             self.auth_token = None
             self.current_username = None
+            self.current_role = None
             self.crypto_key = None
 
-    def register(self, username, password):
+    def register(self, username, password, role="user"):
         """Registers a new user on the metadata server."""
         response = self.session.post(
             f"{self.metadata_url}/register",
-            json={"username": username, "password": password},
+            json={"username": username, "password": password, "role": role},
             timeout=self.request_timeout,
         )
         response.raise_for_status()
@@ -50,6 +52,7 @@ class AdriaClient:
         
         self.auth_token = data["token"]
         self.current_username = data["username"]
+        self.current_role = data.get("role", "user")
         
         # NEW: Derive the local AES-256 encryption key (Never leaves this PC!)
         self.crypto_key = CryptoManager.derive_key(password, self.current_username)
@@ -57,7 +60,7 @@ class AdriaClient:
         self.session.headers.update({"Authorization": f"Bearer {self.auth_token}"})
         
         # Save session including the local crypto key
-        self.session_manager.save_session(self.auth_token, self.current_username, self.crypto_key)
+        self.session_manager.save_session(self.auth_token, self.current_username, self.crypto_key, self.current_role)
         return data
 
     def logout(self):
@@ -65,6 +68,7 @@ class AdriaClient:
         self.session_manager.clear_session()
         self.auth_token = None
         self.current_username = None
+        self.current_role = None
         self.crypto_key = None
         self.session.headers.pop("Authorization", None)
 
@@ -201,4 +205,3 @@ class AdriaClient:
                 print(f"Warning: Could not delete chunk {chunk['chunk_filename']} from node: {e}")
 
         return True
-

@@ -10,9 +10,11 @@ class SessionManager:
         self.session_file = os.path.join(os.path.dirname(__file__), "..", "..", "data", session_file)
         os.makedirs(os.path.dirname(self.session_file), exist_ok=True)
 
-    def save_session(self, token, username, crypto_key=None):
+    def save_session(self, token, username, crypto_key=None, role=None):
         """Persists the JWT token and the local Zero-Knowledge encryption key."""
         data = {"token": token, "username": username}
+        if role:
+            data["role"] = role
         if crypto_key:
             data["crypto_key"] = crypto_key
             

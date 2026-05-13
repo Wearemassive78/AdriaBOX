@@ -33,7 +33,8 @@ def test_client_register_success(mock_post):
     # a inviare i dati giusti, all'URL giusto, formattati come JSON!
     mock_post.assert_called_once_with(
         "http://fake-server:5000/register",
-        json={"username": "mario", "password": "password123"}
+        json={"username": "mario", "password": "password123", "role": "user"},
+        timeout=10.0,
     )
 
 @patch('client.core.requests.Session.post')
@@ -43,7 +44,11 @@ def test_client_login_success(mock_post):
     # --- 1. SETUP ---
     mock_response = Mock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {"token": "my-secret-jwt-token"}
+    mock_response.json.return_value = {
+        "token": "my-secret-jwt-token",
+        "username": "mario",
+        "role": "user",
+    }
     mock_response.raise_for_status.return_value = None
     mock_post.return_value = mock_response
 
@@ -54,5 +59,7 @@ def test_client_login_success(mock_post):
     # --- 3. VERIFY ---
     # Verifichiamo che il token sia stato salvato nella nostra "struct"
     assert client.auth_token == "my-secret-jwt-token"
+    assert client.current_username == "mario"
+    assert client.current_role == "user"
     # Verifichiamo che la sessione sia pronta a mandare il token nelle chiamate future!
     assert client.session.headers["Authorization"] == "Bearer my-secret-jwt-token"

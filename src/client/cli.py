@@ -37,10 +37,11 @@ class AdriaCLI:
 
         self.commands_info = {}
 
-        reg_help = "adria register <username> <password>\nCreates a new user account."
+        reg_help = "adria register <username> <password> [--role user|admin]\nCreates a new user account."
         register_parser = self.subparsers.add_parser("register", help=reg_help)
         register_parser.add_argument("username", type=str)
         register_parser.add_argument("password", type=str)
+        register_parser.add_argument("--role", choices=("user", "admin"), default="user")
         self.commands_info["register"] = reg_help
 
         login_help = "adria login <username> <password>\nAuthenticates and retrieves a session token."
@@ -120,7 +121,7 @@ class AdriaCLI:
         args = self.parser.parse_args()
 
         if args.command == "register":
-            self._handle_register(args.username, args.password)
+            self._handle_register(args.username, args.password, args.role)
         elif args.command == "login":
             self._handle_login(args.username, args.password)
         elif args.command == "whoami":
@@ -233,14 +234,14 @@ class AdriaCLI:
         console.print()
         console.print(table)
 
-    def _handle_register(self, username, password):
+    def _handle_register(self, username, password, role):
         try:
-            self.client.register(username, password)
+            self.client.register(username, password, role)
 
             if RICH_AVAILABLE and console:
-                console.print("[green]Registration successful.[/green] Please login.")
+                console.print(f"[green]Registration successful.[/green] Role: {role}. Please login.")
             else:
-                print("Registration successful. Please login.")
+                print(f"Registration successful. Role: {role}. Please login.")
 
         except Exception as e:
             print(f"Error during registration: {e}")

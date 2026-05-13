@@ -60,13 +60,13 @@ class DatabaseManager:
 
             conn.commit()
 
-    def register_user(self, username, plain_password):
+    def register_user(self, username, plain_password, role="user"):
         hashed_pw = generate_password_hash(plain_password)
         with self._get_connection() as conn:
             cur = conn.cursor()
             try:
                 cur.execute('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)',
-                            (username, hashed_pw, 'user'))
+                            (username, hashed_pw, role))
                 conn.commit()
                 return cur.lastrowid
             except sqlite3.IntegrityError:

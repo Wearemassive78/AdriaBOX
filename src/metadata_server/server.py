@@ -81,13 +81,16 @@ class AdriaServer:
         data = request.json or {}
         username = data.get("username")
         password = data.get("password")
+        role = data.get("role", "user")
 
         if not username or not password:
             return jsonify({"error": "Missing credentials"}), 400
+        if role not in ("user", "admin"):
+            return jsonify({"error": "Invalid role"}), 400
 
         try:
-            self.db.register_user(username, password)
-            return jsonify({"message": "User registered"}), 201
+            self.db.register_user(username, password, role)
+            return jsonify({"message": "User registered", "role": role}), 201
         except ValueError:
             return jsonify({"error": "Username already exists"}), 409
 
