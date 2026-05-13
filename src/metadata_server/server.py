@@ -8,7 +8,7 @@ import jwt
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from common.constants import CHUNK_SIZE
+from common.constants import CHUNK_SIZE, LOGICAL_BLOCK_SIZE
 from metadata_server.db import DatabaseManager
 
 DEFAULT_DB_PATH = os.path.join(
@@ -123,24 +123,26 @@ class AdriaServer:
             return jsonify({"error": "Invalid size"}), 400
 
         node_count = len(self.storage_nodes)
+
+        # Calculate exactly how many 64MB blocks we need
         if file_size == 0:
             chunk_count = 1
         else:
-            chunk_count = min(node_count, max(1, math.ceil(file_size / CHUNK_SIZE)))
-            if file_size >= node_count:
-                chunk_count = node_count
+            chunk_count = max(1, math.ceil(file_size / LOGICAL_BLOCK_SIZE))
 
-        base_size = file_size // chunk_count if chunk_count else 0
-        remainder = file_size % chunk_count if chunk_count else 0
-        
-        # FIXED: Passing file_size to add_file
         file_id = self.db.add_file(filename, file_size, chunk_count, owner_id=1)
 
         chunks = []
         offset = 0
         for index in range(chunk_count):
+            # Round-Robin distribution: Chunk 0->Node 1, Chunk 1->Node 2, etc.
             node = self.storage_nodes[index % node_count]
-            size = base_size + (1 if index < remainder else 0)
+            
+            # The size is 64MB, unless it's the very last chunk which might be smaller
+            size = min(LOGICAL_BLOCK_SIZE, file_size - offset)
+            if size <= 0 and index == 0: # Handle empty 0-byte files
+                size = 0
+                
             chunk_filename = f"{file_id}_{index}_{os.path.basename(filename)}.chunk"
             chunks.append({
                 "index": index,
