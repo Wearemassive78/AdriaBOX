@@ -58,6 +58,8 @@ class AdriaServer:
         self.app.add_url_rule("/files/upload-plan", view_func=self.create_upload_plan, methods=["POST"])
         self.app.add_url_rule("/files/complete", view_func=self.complete_upload, methods=["POST"])
         self.app.add_url_rule("/files/download-plan", view_func=self.create_download_plan, methods=["GET"])
+        self.app.add_url_rule("/files/list", view_func=self.list_files, methods=["GET"])
+        self.app.add_url_rule("/files/remove", view_func=self.remove_file, methods=["DELETE"])
 
     def _get_current_user(self):
         """Extracts and verifies the JWT token from the Authorization header."""
@@ -134,13 +136,12 @@ class AdriaServer:
             return jsonify({"error": "Invalid size"}), 400
 
         node_count = len(self.storage_nodes)
-        
+
         if file_size == 0:
             chunk_count = 1
         else:
             chunk_count = max(1, math.ceil(file_size / LOGICAL_BLOCK_SIZE))
 
-        # Assign the file to the actual authenticated user
         file_id = self.db.add_file(filename, file_size, chunk_count, owner_id=current_user["user_id"])
 
         chunks = []
@@ -150,7 +151,7 @@ class AdriaServer:
             size = min(LOGICAL_BLOCK_SIZE, file_size - offset)
             if size <= 0 and index == 0:
                 size = 0
-                
+
             chunk_filename = f"{file_id}_{index}_{os.path.basename(filename)}.chunk"
             chunks.append({
                 "index": index,
@@ -185,12 +186,11 @@ class AdriaServer:
         if not file_info:
             return jsonify({"error": "File not found"}), 404
 
-        # Enforce Ownership Validation
         if file_info["owner_id"] != current_user["user_id"] and current_user["role"] != "admin":
              return jsonify({"error": "Forbidden: You do not have permission to download this file."}), 403
 
         chunks_data = self.db.get_chunks_by_file_id(file_info["id"])
-        
+
         plan_chunks = []
         for c in chunks_data:
             node_cfg = next((n for n in self.storage_nodes if n["node_id"] == c["node_id"]), self.storage_nodes[0])
@@ -222,7 +222,7 @@ class AdriaServer:
             return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
 
         file_id = data["file_id"]
-        
+
         for chunk in data["chunks"]:
             self.db.save_chunk_metadata(
                 file_id=file_id,
@@ -244,6 +244,59 @@ class AdriaServer:
 
     def run(self, host="0.0.0.0", port=5000):
         self.app.run(host=host, port=port, debug=True)
+
+    def list_files(self):
+        """
+        Returns a list of all files owned by the authenticated user.
+        """
+        current_user = self._get_current_user()
+        if not current_user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        files = self.db.get_user_files(current_user["user_id"])
+
+        return jsonify({"files": files}), 200
+
+    def remove_file(self):
+        """
+        Endpoint to delete a file. Returns the chunk locations 
+        so the client can physically delete them from the nodes.
+        """
+        current_user = self._get_current_user()
+        if not current_user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        filename = request.args.get("filename")
+        if not filename:
+            return jsonify({"error": "Missing filename parameter"}), 400
+
+        file_info = self.db.get_file_by_name(filename)
+        if not file_info:
+            return jsonify({"error": "File not found"}), 404
+
+        # Enforce Ownership
+        if file_info["owner_id"] != current_user["user_id"] and current_user["role"] != "admin":
+             return jsonify({"error": "Forbidden"}), 403
+
+        # Get chunk locations before deleting metadata
+        chunks_data = self.db.get_chunks_by_file_id(file_info["id"])
+        plan_chunks = []
+        for c in chunks_data:
+            node_cfg = next((n for n in self.storage_nodes if n["node_id"] == c["node_id"]), self.storage_nodes[0])
+            plan_chunks.append({
+                "chunk_filename": c["chunk_filename"],
+                "client_host": node_cfg["client_host"],
+                "tcp_port": node_cfg["client_tcp_port"]
+            })
+
+        # Logical Delete
+        self.db.delete_file(file_info["id"])
+
+        return jsonify({
+            "message": "Metadata deleted successfully",
+            "chunks": plan_chunks
+        }), 200
+
 
 if __name__ == "__main__":
     server = AdriaServer()

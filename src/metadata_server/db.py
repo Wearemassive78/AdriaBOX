@@ -117,3 +117,29 @@ class DatabaseManager:
             cur = conn.cursor()
             cur.execute('SELECT * FROM chunks WHERE file_id = ? ORDER BY chunk_index ASC', (file_id,))
             return [dict(row) for row in cur.fetchall()]
+
+    def get_user_files(self, user_id):
+        """
+        Retrieves all files owned by a specific user.
+        Essential for the 'ls' command.
+        """
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            # We select the necessary info, ordered by newest first
+            cur.execute('''
+                SELECT filename, size, chunks, created_at 
+                FROM files 
+                WHERE owner_id = ? 
+                ORDER BY id DESC
+            ''', (user_id,))
+            return [dict(row) for row in cur.fetchall()]
+
+    def delete_file(self, file_id):
+        """
+        Removes a file and all its chunk mappings from the database.
+        """
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('DELETE FROM chunks WHERE file_id = ?', (file_id,))
+            cur.execute('DELETE FROM files WHERE id = ?', (file_id,))
+            conn.commit()

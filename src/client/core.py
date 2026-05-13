@@ -154,3 +154,51 @@ class AdriaClient:
                 downloader.download(chunk["chunk_filename"], dest_file, chunk["size"])
 
         return local_destination
+
+    def list_files(self):
+        """
+        Requests the list of owned files from the metadata server.
+        """
+        if not self.auth_token:
+            raise Exception("Authentication required. Please login first.")
+
+        response = self.session.get(
+            f"{self.metadata_url}/files/list",
+            timeout=self.request_timeout
+        )
+        response.raise_for_status()
+        return response.json().get("files", [])
+
+    def rm(self, filename):
+        """
+        Deletes a file from the cluster (both metadata and physical chunks).
+        """
+        if not self.auth_token:
+            raise Exception("Authentication required. Please login first.")
+
+        # 1. Ask Master to delete metadata and give us the chunk locations
+        response = self.session.delete(
+            f"{self.metadata_url}/files/remove",
+            params={"filename": filename},
+            timeout=self.request_timeout
+        )
+        response.raise_for_status()
+        plan = response.json()
+
+        from common.tcp import ChunkDeleter
+
+        # 2. Connect to nodes and physically delete the chunks
+        for chunk in plan.get("chunks", []):
+            try:
+                deleter = ChunkDeleter(
+                    chunk["client_host"],
+                    int(chunk["tcp_port"]),
+                    timeout=self.request_timeout
+                )
+                deleter.delete(chunk["chunk_filename"])
+            except Exception as e:
+                # We catch errors here so one down node doesn't break the whole loop
+                print(f"Warning: Could not delete chunk {chunk['chunk_filename']} from node: {e}")
+
+        return True
+

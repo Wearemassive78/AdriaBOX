@@ -63,7 +63,6 @@ class AdriaCLI:
         upload_parser.add_argument("-d", "--destination", default="/", help="Remote destination folder")
         self.commands_info["upload"] = upload_help
 
-        # CHANGED: Download command configuration
         download_help = "adria download <filename> [-d <local_dest>]\nDownloads a file from the cluster."
         download_parser = self.subparsers.add_parser("download", help=download_help)
         download_parser.add_argument("filename")
@@ -130,7 +129,6 @@ class AdriaCLI:
             self._handle_logout()
         elif args.command == "upload":
             self._handle_upload(args.local_filepath, args.destination)
-        # CHANGED: Added logic to call download method
         elif args.command == "download":
             try:
                 dest = self.client.download(args.filename, args.destination)
@@ -141,7 +139,7 @@ class AdriaCLI:
             except Exception as e:
                 print(f"Error during download: {e}")
         elif args.command == "rm":
-            print("Remove command not implemented yet.")
+            self._handle_rm(args.remote_filepath)
         elif args.command == "mv":
             print("Move command not implemented yet.")
         elif args.command == "mkdir":
@@ -149,7 +147,7 @@ class AdriaCLI:
         elif args.command == "rmdir":
             print("Rmdir command not implemented yet.")
         elif args.command == "ls":
-            print("List command not implemented yet.")
+            self._handle_ls(args.directory_path, args.l)
         elif args.command == "quota":
             print("Quota command not implemented yet.")
         elif args.command == "cluster-status":
@@ -322,6 +320,52 @@ class AdriaCLI:
 
         except Exception as e:
             print(f"Error: {e}")
+
+    def _handle_ls(self, directory_path, detailed):
+        try:
+            files = self.client.list_files()
+
+            if RICH_AVAILABLE and console:
+                table = Table(show_header=True, header_style="bold magenta", box=None)
+                table.add_column("Filename", style="cyan")
+                table.add_column("Size", justify="right")
+                table.add_column("Chunks", style="dim", justify="center") # Dimmed as requested
+                table.add_column("Created At", style="green")
+
+                for f in files:
+                    # Format size to be human-readable
+                    size_val = f.get('size', 0)
+                    if size_val > 1024**2:
+                        readable_size = f"{size_val / (1024**2):.2f} MB"
+                    else:
+                        readable_size = f"{size_val / 1024:.2f} KB"
+
+                    table.add_row(
+                        f.get("filename"),
+                        readable_size,
+                        str(f.get("chunks")),
+                        f.get("created_at")[:16].replace("T", " ") # Clean date format
+                    )
+                
+                console.print(Panel(table, title="Remote Filesystem", border_style="blue"))
+            else:
+                # Fallback for standard terminal
+                print(f"{'Filename':<30} | {'Size':<10} | {'Chunks':<6}")
+                for f in files:
+                    print(f"{f.get('filename'):<30} | {f.get('size'):<10} | {f.get('chunks'):<6}")
+
+        except Exception as e:
+            print(f"Error listing files: {e}")
+
+    def _handle_rm(self, filename):
+        try:
+            self.client.rm(filename)
+            if RICH_AVAILABLE and console:
+                console.print(f"[yellow]File deleted successfully:[/yellow] {filename}")
+            else:
+                print(f"File deleted successfully: {filename}")
+        except Exception as e:
+            print(f"Error deleting file: {e}")
 
 def main():
     if RICH_AVAILABLE and console:

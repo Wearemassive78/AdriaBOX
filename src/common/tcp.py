@@ -115,6 +115,24 @@ class ChunkDownloader(AdriaTCPStreamer):
                 raise ConnectionError("Connection dropped before chunk was fully downloaded")
             return True
 
+class ChunkDeleter(AdriaTCPStreamer):
+    """Client-side class to send a delete command to a storage node."""
+    
+    def __init__(self, host, port, timeout=5.0):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+
+    def delete(self, chunk_filename):
+        encoded_name = chunk_filename.encode('utf-8')
+        # Command 'X' for Delete
+        header = b'X' + struct.pack('>I', len(encoded_name)) + encoded_name
+
+        with socket.create_connection((self.host, self.port), timeout=self.timeout) as s:
+            s.sendall(header)
+            ack = self._recv_exact(s, len(self.ACK_OK))
+            return ack == self.ACK_OK
+
 class FileReceiver(AdriaTCPStreamer):
     """Encapsulates the logic for receiving and sending chunks on a storage node."""
     
@@ -129,6 +147,8 @@ class FileReceiver(AdriaTCPStreamer):
                 self.handle_upload()
             elif cmd == b'D':
                 self.handle_download()
+            elif cmd == b'X': # NEW: Handle Delete command
+                self.handle_delete()
             else:
                 self.conn.sendall(self.ACK_ERROR)
         except Exception as e:
@@ -137,6 +157,21 @@ class FileReceiver(AdriaTCPStreamer):
                 self.conn.sendall(self.ACK_ERROR)
             except OSError:
                 pass
+
+    def handle_delete(self):
+        """Physically removes a chunk from the storage node disk."""
+        raw_name_len = self._recv_exact(self.conn, 4)
+        if not raw_name_len: return
+        name_len = struct.unpack('>I', raw_name_len)[0]
+
+        raw_name = self._recv_exact(self.conn, name_len)
+        filename = raw_name.decode('utf-8')
+        
+        file_path = os.path.join(self.storage_dir, filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            
+        self.conn.sendall(self.ACK_OK)
 
     def handle_upload(self):
         raw_name_len = self._recv_exact(self.conn, 4)
