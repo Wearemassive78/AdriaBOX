@@ -2,6 +2,7 @@ import os
 import requests
 import json
 from client.session import SessionManager
+from client.crypto import CryptoManager
 
 class AdriaClient:
     """
@@ -20,11 +21,12 @@ class AdriaClient:
         if session_data and "token" in session_data:
             self.auth_token = session_data["token"]
             self.current_username = session_data.get("username")
-            # Automatically set the Authorization header for all future requests
+            self.crypto_key = session_data.get("crypto_key")
             self.session.headers.update({"Authorization": f"Bearer {self.auth_token}"})
         else:
             self.auth_token = None
             self.current_username = None
+            self.crypto_key = None
 
     def register(self, username, password):
         """Registers a new user on the metadata server."""
@@ -37,7 +39,7 @@ class AdriaClient:
         return response.json()
 
     def login(self, username, password):
-        """Authenticates the user and starts a new session."""
+        """Authenticates the user, starts session, and derives Zero-Knowledge key."""
         response = self.session.post(
             f"{self.metadata_url}/login",
             json={"username": username, "password": password},
@@ -49,39 +51,35 @@ class AdriaClient:
         self.auth_token = data["token"]
         self.current_username = data["username"]
         
-        # Update session headers with the new token
+        # NEW: Derive the local AES-256 encryption key (Never leaves this PC!)
+        self.crypto_key = CryptoManager.derive_key(password, self.current_username)
+        
         self.session.headers.update({"Authorization": f"Bearer {self.auth_token}"})
         
-        # Persist session locally
-        self.session_manager.save_session({"token": self.auth_token, "username": self.current_username})
+        # Save session including the local crypto key
+        self.session_manager.save_session(self.auth_token, self.current_username, self.crypto_key)
         return data
 
     def logout(self):
-        """Clears the local session and headers."""
+        """Clears the local session, headers, and destroys the crypto key in RAM."""
         self.session_manager.clear_session()
         self.auth_token = None
         self.current_username = None
+        self.crypto_key = None
         self.session.headers.pop("Authorization", None)
 
     def upload(self, local_filepath, remote_dir="/"):
-        """
-        Uploads a file by requesting a plan and streaming chunks to nodes.
-        The JWT token is automatically included in the headers.
-        """
         if not self.auth_token:
             raise Exception("Authentication required. Please login first.")
+        if not self.crypto_key:
+            raise Exception("Missing encryption key. Please login again.")
 
         file_size = os.path.getsize(local_filepath)
         filename = os.path.basename(local_filepath)
 
-        # 1. Get the upload plan (Master checks JWT here)
         plan_response = self.session.post(
             f"{self.metadata_url}/files/upload-plan",
-            json={
-                "filename": filename,
-                "size": file_size,
-                "remote_dir": remote_dir
-            },
+            json={"filename": filename, "size": file_size, "remote_dir": remote_dir},
             timeout=self.request_timeout,
         )
         plan_response.raise_for_status()
@@ -90,18 +88,18 @@ class AdriaClient:
         from common.tcp import ChunkStreamSender
         uploaded_chunks = []
 
-        # 2. Stream chunks to storage nodes
         with open(local_filepath, "rb") as source:
             for chunk in plan.get("chunks", []):
                 source.seek(chunk["offset"])
                 
+                # Pass the crypto_key to the network layer
                 sender = ChunkStreamSender(
                     chunk["client_host"],
                     int(chunk["tcp_port"]),
                     timeout=self.request_timeout,
+                    crypto_key=self.crypto_key
                 )
                 
-                # The node receives the data via raw TCP
                 chunk_hash = sender.send(source, chunk["chunk_filename"], chunk["size"])
                 
                 uploaded_chunks.append({
@@ -112,7 +110,6 @@ class AdriaClient:
                     "sha256": chunk_hash
                 })
 
-        # 3. Finalize the upload on the Master
         complete_response = self.session.post(
             f"{self.metadata_url}/files/complete",
             json={
@@ -127,18 +124,16 @@ class AdriaClient:
         return complete_response.json()
 
     def download(self, filename, local_destination=None):
-        """
-        Downloads a file by fetching the map from the Master (JWT protected).
-        """
         if not self.auth_token:
             raise Exception("Authentication required. Please login first.")
+        if not self.crypto_key:
+            raise Exception("Missing encryption key. Please login again.")
 
         if not local_destination:
             local_destination = os.path.join(os.getcwd(), filename)
 
         from common.tcp import ChunkDownloader
 
-        # 1. Request download plan
         plan_response = self.session.get(
             f"{self.metadata_url}/files/download-plan",
             params={"filename": filename},
@@ -147,13 +142,14 @@ class AdriaClient:
         plan_response.raise_for_status()
         plan = plan_response.json()
 
-        # 2. Rebuild the file
         with open(local_destination, "wb") as dest_file:
             for chunk in plan.get("chunks", []):
+                # Pass the crypto_key to the network layer
                 downloader = ChunkDownloader(
                     chunk["client_host"],
                     int(chunk["tcp_port"]),
-                    timeout=self.request_timeout
+                    timeout=self.request_timeout,
+                    crypto_key=self.crypto_key
                 )
                 downloader.download(chunk["chunk_filename"], dest_file, chunk["size"])
 

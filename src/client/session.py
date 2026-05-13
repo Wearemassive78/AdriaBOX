@@ -1,61 +1,35 @@
-import os
+"""Local session management for AdriaBOX client."""
 import json
+import os
 
 class SessionManager:
-    """Handles the local persistence of the authentication token."""
+    """Manages local user session, JWT token, and encryption keys."""
 
-    def __init__(self, filename=".adriabox_session"):
-        """
-        Resolves the path to the user's home directory.
-        Equivalent to getting the $HOME environment variable in C.
-        """
-        self.filepath = os.environ.get(
-            "ADRIABOX_SESSION_FILE",
-            os.path.join(os.path.expanduser('~'), filename)
-        )
+    def __init__(self, session_file="session.json"):
+        # Store the session file safely in the data directory
+        self.session_file = os.path.join(os.path.dirname(__file__), "..", "..", "data", session_file)
+        os.makedirs(os.path.dirname(self.session_file), exist_ok=True)
 
-    def save_token(self, token: str):
-        """Writes the token to a hidden file on disk."""
-        # The 'w' flag opens the file for writing (creates it if missing)
-        try:
-            with open(self.filepath, 'w') as f:
-                json.dump({"token": token}, f)
-        except OSError:
-            return
-
-    def save_session(self, session_data: dict):
-        """Writes a session dict (token, username, role) to disk."""
-        try:
-            with open(self.filepath, 'w') as f:
-                json.dump(session_data, f)
-        except OSError:
-            return
-
-    def load_token(self):
-        """Reads the token from disk if the file exists."""
-        data = self.load_session()
-        if data:
-            return data.get('token')
-        return None
+    def save_session(self, token, username, crypto_key=None):
+        """Persists the JWT token and the local Zero-Knowledge encryption key."""
+        data = {"token": token, "username": username}
+        if crypto_key:
+            data["crypto_key"] = crypto_key
+            
+        with open(self.session_file, "w") as f:
+            json.dump(data, f)
 
     def load_session(self):
-        """Reads the full session dict from disk if present."""
-        try:
-            if os.path.exists(self.filepath):
-                with open(self.filepath, 'r') as f:
-                    data = json.load(f)
-                    return data
-        except Exception:
+        """Retrieves the active session data."""
+        if not os.path.exists(self.session_file):
             return None
-        return None
+        try:
+            with open(self.session_file, "r") as f:
+                return json.load(f)
+        except json.JSONDecodeError:
+            return None
 
     def clear_session(self):
-        """
-        Deletes the session file.
-        This will be used for the 'adria logout' command!
-        """
-        try:
-            if os.path.exists(self.filepath):
-                os.remove(self.filepath)
-        except OSError:
-            return
+        """Destroys the local session, including the encryption key."""
+        if os.path.exists(self.session_file):
+            os.remove(self.session_file)

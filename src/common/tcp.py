@@ -12,7 +12,6 @@ class AdriaTCPStreamer:
 
     @staticmethod
     def _recv_exact(conn, n):
-        """Reads exactly n bytes from the socket."""
         data = bytearray()
         while len(data) < n:
             packet = conn.recv(n - len(data))
@@ -22,20 +21,27 @@ class AdriaTCPStreamer:
         return bytes(data)
 
 class ChunkStreamSender(AdriaTCPStreamer):
-    """Encapsulates the logic for streaming a specific block of a file to a node."""
+    """Encapsulates the logic for streaming and encrypting a specific block."""
 
-    def __init__(self, host, port, timeout=10.0):
+    def __init__(self, host, port, timeout=10.0, crypto_key=None):
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.crypto_key = crypto_key
 
     def send(self, file_descriptor, remote_filename, size_to_send):
-        """Streams exactly 'size_to_send' bytes and calculates SHA-256 on the fly."""
+        from client.crypto import CryptoManager # Local import to keep nodes decoupled
+        
         encoded_name = os.path.basename(remote_filename).encode('utf-8')
-        # ADDED 'U' FOR UPLOAD COMMAND
         header = b'U' + struct.pack('>I', len(encoded_name)) + encoded_name + struct.pack('>Q', size_to_send)
         
         hasher = hashlib.sha256()
+        
+        # Initialize cipher if key is provided
+        encryptor = None
+        if self.crypto_key:
+            cipher = CryptoManager.get_stream_cipher(self.crypto_key, remote_filename)
+            encryptor = cipher.encryptor()
 
         with socket.create_connection((self.host, self.port), timeout=self.timeout) as s:
             s.sendall(header)
@@ -47,8 +53,16 @@ class ChunkStreamSender(AdriaTCPStreamer):
                 if not data:
                     break
                 
+                # We hash the plaintext so the user knows their file is intact
                 hasher.update(data)
-                s.sendall(data)
+                
+                # Encrypt data before sending
+                if encryptor:
+                    data_to_send = encryptor.update(data)
+                else:
+                    data_to_send = data
+                    
+                s.sendall(data_to_send)
                 bytes_sent += len(data)
 
             ack = self._recv_exact(s, len(self.ACK_OK))
@@ -58,18 +72,25 @@ class ChunkStreamSender(AdriaTCPStreamer):
             return hasher.hexdigest()
 
 class ChunkDownloader(AdriaTCPStreamer):
-    """Client-side class to request and download a chunk from a storage node."""
+    """Client-side class to request, download, and decrypt a chunk."""
 
-    def __init__(self, host, port, timeout=10.0):
+    def __init__(self, host, port, timeout=10.0, crypto_key=None):
         self.host = host
         self.port = port
         self.timeout = timeout
+        self.crypto_key = crypto_key
 
     def download(self, chunk_filename, file_descriptor, expected_size):
-        """Requests a file from the node and writes it to an open file descriptor."""
+        from client.crypto import CryptoManager
+        
         encoded_name = chunk_filename.encode('utf-8')
-        # ADDED 'D' FOR DOWNLOAD COMMAND
         header = b'D' + struct.pack('>I', len(encoded_name)) + encoded_name
+
+        # Initialize decryptor if key is provided
+        decryptor = None
+        if self.crypto_key:
+            cipher = CryptoManager.get_stream_cipher(self.crypto_key, chunk_filename)
+            decryptor = cipher.decryptor()
 
         with socket.create_connection((self.host, self.port), timeout=self.timeout) as s:
             s.sendall(header)
@@ -80,7 +101,14 @@ class ChunkDownloader(AdriaTCPStreamer):
                 packet = s.recv(to_read)
                 if not packet:
                     break
-                file_descriptor.write(packet)
+                
+                # Decrypt data before writing to disk
+                if decryptor:
+                    plaintext = decryptor.update(packet)
+                else:
+                    plaintext = packet
+                    
+                file_descriptor.write(plaintext)
                 bytes_received += len(packet)
             
             if bytes_received != expected_size:
@@ -95,7 +123,6 @@ class FileReceiver(AdriaTCPStreamer):
         self.storage_dir = storage_dir
 
     def serve(self):
-        """Dispatcher: reads the first byte to decide between Upload (U) or Download (D)."""
         try:
             cmd = self._recv_exact(self.conn, 1)
             if cmd == b'U':
@@ -112,7 +139,6 @@ class FileReceiver(AdriaTCPStreamer):
                 pass
 
     def handle_upload(self):
-        """Processes incoming data and saves it to disk."""
         raw_name_len = self._recv_exact(self.conn, 4)
         if not raw_name_len: return
         name_len = struct.unpack('>I', raw_name_len)[0]
@@ -153,7 +179,6 @@ class FileReceiver(AdriaTCPStreamer):
         self.conn.sendall(self.ACK_OK)
 
     def handle_download(self):
-        """Reads a requested chunk from disk and streams it to the client."""
         raw_name_len = self._recv_exact(self.conn, 4)
         if not raw_name_len: return
         name_len = struct.unpack('>I', raw_name_len)[0]
@@ -173,7 +198,6 @@ class FileReceiver(AdriaTCPStreamer):
                 self.conn.sendall(chunk)
 
 def create_server_socket(bind_host='', bind_port=0, backlog=5):
-    """Legacy helper maintained for testing compatibility."""
     s = socket.socket()
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((bind_host, bind_port))
