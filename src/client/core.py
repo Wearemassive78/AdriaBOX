@@ -1,164 +1,125 @@
 import os
 import requests
-import jwt
-from common.hash import chunk_sha256, file_sha256
-from common.tcp import ChunkStreamSender
+import json
 from client.session import SessionManager
-from client.config import load_client_config
-from client.validators import require_existing_file, require_metadata_url, require_text
 
 class AdriaClient:
-    """Core logic for interacting with AdriaBOX cluster."""
+    """
+    Core client logic for AdriaBOX.
+    Handles communication with the Metadata Server and coordinates storage nodes.
+    """
 
-    def __init__(self, metadata_url: str | None = None, request_timeout: float | None = None):
-        """Initializes the client with the server URL and an empty token."""
-        config = load_client_config()
-        self.metadata_url = require_metadata_url(metadata_url or config.metadata_url)
-        self.request_timeout = request_timeout if request_timeout is not None else config.request_timeout
+    def __init__(self, metadata_url="http://localhost:5000", request_timeout=10.0):
+        self.metadata_url = metadata_url
+        self.request_timeout = request_timeout
         self.session_manager = SessionManager()
-        session_data = self.session_manager.load_session() or {}
-        self.auth_token = session_data.get('token')
-        self.current_username = session_data.get('username')
-        self.current_role = session_data.get('role')
-        
-        # A Session object keeps the underlying TCP connection alive 
-        # (connection pooling) and persists cookies/headers across requests.
         self.session = requests.Session()
-
-        if self.auth_token:
+        
+        # Load existing session if available
+        session_data = self.session_manager.load_session()
+        if session_data and "token" in session_data:
+            self.auth_token = session_data["token"]
+            self.current_username = session_data.get("username")
+            # Automatically set the Authorization header for all future requests
             self.session.headers.update({"Authorization": f"Bearer {self.auth_token}"})
-            # If the session file only contains a token (older clients),
-            # decode the JWT payload (without verifying) to populate username/role for display.
-            if not self.current_username:
-                try:
-                    payload = jwt.decode(self.auth_token, options={"verify_signature": False})
-                    self.current_username = payload.get('username')
-                    self.current_role = payload.get('role')
-                except Exception:
-                    # Ignore decode errors; leave username/role as None
-                    pass
+        else:
+            self.auth_token = None
+            self.current_username = None
 
     def register(self, username, password):
-        """
-        Implements: adria register <user> <pass>
-        Sends credentials to the Master node.
-        """
-        username = require_text(username, "username")
-        password = require_text(password, "password")
-        url = f"{self.metadata_url}/register"
-        payload = {
-            "username": username,
-            "password": password
-        }
-        
-        # Equivalent to an HTTP POST request 
-        response = self.session.post(url, json=payload)
-        
-        # Checks if the server returned an HTTP error (e.g., 400 Bad Request)
-        # and throws an exception if it did.
-        response.raise_for_status() 
-        
-        # Master returns 201 Created (User registered) [cite: 1]
+        """Registers a new user on the metadata server."""
+        response = self.session.post(
+            f"{self.metadata_url}/register",
+            json={"username": username, "password": password},
+            timeout=self.request_timeout,
+        )
+        response.raise_for_status()
         return response.json()
 
     def login(self, username, password):
-        """
-        Implements: adria login <user> <pass>
-        Retrieves the JWT token and stores it in the session state.
-        """
-        username = require_text(username, "username")
-        password = require_text(password, "password")
-        url = f"{self.metadata_url}/login"
-        payload = {
-            "username": username,
-            "password": password
-        }
-        
-        response = self.session.post(url, json=payload)
+        """Authenticates the user and starts a new session."""
+        response = self.session.post(
+            f"{self.metadata_url}/login",
+            json={"username": username, "password": password},
+            timeout=self.request_timeout,
+        )
         response.raise_for_status()
-        
         data = response.json()
-
-        # Master returns 200 OK (Auth Token) and user info
-        self.auth_token = data.get("token")
-        self.current_username = data.get('username') or username
-        self.current_role = data.get('role') or 'user'
-
-        # Configure the HTTP session to automatically attach the Auth Token
-        # to the headers of ALL future HTTP requests.
-        if self.auth_token:
-            self.session.headers.update({"Authorization": f"Bearer {self.auth_token}"})
-            # Persist full session (token + username + role)
-            self.session_manager.save_session({
-                'token': self.auth_token,
-                'username': self.current_username,
-                'role': self.current_role
-            })
-
+        
+        self.auth_token = data["token"]
+        self.current_username = data["username"]
+        
+        # Update session headers with the new token
+        self.session.headers.update({"Authorization": f"Bearer {self.auth_token}"})
+        
+        # Persist session locally
+        self.session_manager.save_session({"token": self.auth_token, "username": self.current_username})
         return data
 
-    def upload(self, local_filepath, destination="/"):
-        """Uploads a local file by splitting it across storage nodes.
+    def logout(self):
+        """Clears the local session and headers."""
+        self.session_manager.clear_session()
+        self.auth_token = None
+        self.current_username = None
+        self.session.headers.pop("Authorization", None)
 
-        The metadata server returns a plan that maps each byte range to one
-        storage node. The client streams each chunk over TCP, waits for an ACK,
-        then confirms the completed upload over HTTP.
+    def upload(self, local_filepath, remote_dir="/"):
+        """
+        Uploads a file by requesting a plan and streaming chunks to nodes.
+        The JWT token is automatically included in the headers.
         """
         if not self.auth_token:
             raise Exception("Authentication required. Please login first.")
 
-        local_filepath = require_existing_file(local_filepath)
-        destination = destination or "/"
-        filename = os.path.basename(local_filepath)
         file_size = os.path.getsize(local_filepath)
+        filename = os.path.basename(local_filepath)
 
-        # 2. Request an upload plan from the metadata server
+        # 1. Get the upload plan (Master checks JWT here)
         plan_response = self.session.post(
             f"{self.metadata_url}/files/upload-plan",
             json={
                 "filename": filename,
                 "size": file_size,
-                "remote_dir": destination,
+                "remote_dir": remote_dir
             },
             timeout=self.request_timeout,
         )
         plan_response.raise_for_status()
         plan = plan_response.json()
 
-        # 3. Stream chunks to the storage nodes
+        from common.tcp import ChunkStreamSender
         uploaded_chunks = []
+
+        # 2. Stream chunks to storage nodes
         with open(local_filepath, "rb") as source:
             for chunk in plan.get("chunks", []):
                 source.seek(chunk["offset"])
-                # Instantiate the OOP sender and transmit the chunk data
+                
                 sender = ChunkStreamSender(
                     chunk["client_host"],
                     int(chunk["tcp_port"]),
-                    timeout=self.request_timeout
+                    timeout=self.request_timeout,
                 )
+                
+                # The node receives the data via raw TCP
                 chunk_hash = sender.send(source, chunk["chunk_filename"], chunk["size"])
-
+                
                 uploaded_chunks.append({
                     "index": chunk["index"],
                     "chunk_filename": chunk["chunk_filename"],
-                    "node_id": chunk.get("node_id"),
-                    "host": chunk.get("host"),
-                    "client_host": chunk.get("client_host"),
-                    "tcp_port": int(chunk.get("tcp_port")),
+                    "node_id": chunk["node_id"],
                     "size": chunk["size"],
-                    "sha256": chunk_hash,
+                    "sha256": chunk_hash
                 })
 
-        # 4. Notify metadata server that upload is complete
+        # 3. Finalize the upload on the Master
         complete_response = self.session.post(
             f"{self.metadata_url}/files/complete",
             json={
-                "file_id": plan.get("file_id"),
-                "filename": plan.get("filename", filename),
-                "remote_path": plan.get("remote_path", destination),
-                "size": file_size,
-                "sha256": file_sha256(local_filepath),
+                "file_id": plan["file_id"],
+                "filename": filename,
                 "chunks": uploaded_chunks,
+                "size": file_size
             },
             timeout=self.request_timeout,
         )
@@ -167,19 +128,17 @@ class AdriaClient:
 
     def download(self, filename, local_destination=None):
         """
-        Downloads a file by fetching the chunk map from the master
-        and streaming data directly from the storage nodes.
+        Downloads a file by fetching the map from the Master (JWT protected).
         """
         if not self.auth_token:
             raise Exception("Authentication required. Please login first.")
 
-        # Default destination is current working directory
         if not local_destination:
             local_destination = os.path.join(os.getcwd(), filename)
 
         from common.tcp import ChunkDownloader
 
-        # 1. Request the download plan from the metadata server
+        # 1. Request download plan
         plan_response = self.session.get(
             f"{self.metadata_url}/files/download-plan",
             params={"filename": filename},
@@ -188,34 +147,14 @@ class AdriaClient:
         plan_response.raise_for_status()
         plan = plan_response.json()
 
-        chunks = plan.get("chunks", [])
-        if not chunks:
-            raise Exception("File is empty or no chunks found.")
-
-        # 2. Rebuild the file by connecting to nodes sequentially
-        print(f"Downloading {filename} ({plan.get('size')} bytes) in {len(chunks)} chunks...")
-        
+        # 2. Rebuild the file
         with open(local_destination, "wb") as dest_file:
-            for chunk in chunks:
+            for chunk in plan.get("chunks", []):
                 downloader = ChunkDownloader(
                     chunk["client_host"],
                     int(chunk["tcp_port"]),
                     timeout=self.request_timeout
                 )
-                # Stream the 4KB buffers straight to disk
                 downloader.download(chunk["chunk_filename"], dest_file, chunk["size"])
 
         return local_destination
-
-    def logout(self):
-        """
-        Implements: adria logout
-        Clears the local token and HTTP headers.
-        """
-        self.auth_token = None
-        self.current_username = None
-        self.current_role = None
-        if "Authorization" in self.session.headers:
-            del self.session.headers["Authorization"]
-        
-        self.session_manager.clear_session()

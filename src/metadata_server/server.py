@@ -59,6 +59,19 @@ class AdriaServer:
         self.app.add_url_rule("/files/complete", view_func=self.complete_upload, methods=["POST"])
         self.app.add_url_rule("/files/download-plan", view_func=self.create_download_plan, methods=["GET"])
 
+    def _get_current_user(self):
+        """Extracts and verifies the JWT token from the Authorization header."""
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return None
+        
+        token = auth_header.split(" ")[1]
+        try:
+            data = jwt.decode(token, self.secret_key, algorithms=["HS256"])
+            return data
+        except Exception:
+            return None
+
     def health(self):
         return jsonify({"status": "ok", "nodes": self.storage_nodes})
 
@@ -102,16 +115,14 @@ class AdriaServer:
         return jsonify({"token": token, "username": user["username"], "role": user.get("role", "user")}), 200
 
     def upload(self):
-        data = request.json or {}
-        filename = data.get("filename")
-        if not filename:
-            return jsonify({"error": "Missing filename"}), 400
-
-        node = self.storage_nodes[0]
-        self.db.add_file(filename, size=0, chunks=1, owner_id=1)
-        return jsonify({"node_ip": node["client_host"], "node_port": node["client_tcp_port"], "message": "Authorized"}), 200
+        """Legacy endpoint."""
+        return jsonify({"error": "Deprecated"}), 400
 
     def create_upload_plan(self):
+        current_user = self._get_current_user()
+        if not current_user:
+            return jsonify({"error": "Unauthorized. Invalid or missing token."}), 401
+
         data = request.json or {}
         filename = data.get("filename")
         file_size = int(data.get("size") or 0)
@@ -123,24 +134,21 @@ class AdriaServer:
             return jsonify({"error": "Invalid size"}), 400
 
         node_count = len(self.storage_nodes)
-
-        # Calculate exactly how many 64MB blocks we need
+        
         if file_size == 0:
             chunk_count = 1
         else:
             chunk_count = max(1, math.ceil(file_size / LOGICAL_BLOCK_SIZE))
 
-        file_id = self.db.add_file(filename, file_size, chunk_count, owner_id=1)
+        # Assign the file to the actual authenticated user
+        file_id = self.db.add_file(filename, file_size, chunk_count, owner_id=current_user["user_id"])
 
         chunks = []
         offset = 0
         for index in range(chunk_count):
-            # Round-Robin distribution: Chunk 0->Node 1, Chunk 1->Node 2, etc.
             node = self.storage_nodes[index % node_count]
-            
-            # The size is 64MB, unless it's the very last chunk which might be smaller
             size = min(LOGICAL_BLOCK_SIZE, file_size - offset)
-            if size <= 0 and index == 0: # Handle empty 0-byte files
+            if size <= 0 and index == 0:
                 size = 0
                 
             chunk_filename = f"{file_id}_{index}_{os.path.basename(filename)}.chunk"
@@ -165,6 +173,10 @@ class AdriaServer:
         }), 200
 
     def create_download_plan(self):
+        current_user = self._get_current_user()
+        if not current_user:
+            return jsonify({"error": "Unauthorized. Invalid or missing token."}), 401
+
         filename = request.args.get("filename")
         if not filename:
             return jsonify({"error": "Missing filename parameter"}), 400
@@ -172,6 +184,10 @@ class AdriaServer:
         file_info = self.db.get_file_by_name(filename)
         if not file_info:
             return jsonify({"error": "File not found"}), 404
+
+        # Enforce Ownership Validation
+        if file_info["owner_id"] != current_user["user_id"] and current_user["role"] != "admin":
+             return jsonify({"error": "Forbidden: You do not have permission to download this file."}), 403
 
         chunks_data = self.db.get_chunks_by_file_id(file_info["id"])
         
@@ -184,7 +200,7 @@ class AdriaServer:
                 "node_id": c["node_id"],
                 "client_host": node_cfg["client_host"],
                 "tcp_port": node_cfg["client_tcp_port"],
-                "size": c["size"] # FIXED: Passing size to the client
+                "size": c["size"]
             })
 
         return jsonify({
@@ -195,6 +211,10 @@ class AdriaServer:
         }), 200
 
     def complete_upload(self):
+        current_user = self._get_current_user()
+        if not current_user:
+            return jsonify({"error": "Unauthorized. Invalid or missing token."}), 401
+
         data = request.json or {}
         required = ("file_id", "filename", "chunks")
         missing = [field for field in required if field not in data]
@@ -204,7 +224,6 @@ class AdriaServer:
         file_id = data["file_id"]
         
         for chunk in data["chunks"]:
-            # FIXED: Passing the chunk size to the database
             self.db.save_chunk_metadata(
                 file_id=file_id,
                 chunk_index=chunk["index"],
