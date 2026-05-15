@@ -41,7 +41,6 @@ class AdriaCLI:
         register_parser = self.subparsers.add_parser("register", help=reg_help)
         register_parser.add_argument("username", type=str)
         register_parser.add_argument("password", type=str)
-        register_parser.add_argument("--role", choices=("user", "admin"), default="user")
         self.commands_info["register"] = reg_help
 
         login_help = "adria login <username> <password>\nAuthenticates and retrieves a session token."
@@ -121,7 +120,7 @@ class AdriaCLI:
         args = self.parser.parse_args()
 
         if args.command == "register":
-            self._handle_register(args.username, args.password, args.role)
+            self._handle_register(args.username, args.password)
         elif args.command == "login":
             self._handle_login(args.username, args.password)
         elif args.command == "whoami":
@@ -236,7 +235,7 @@ class AdriaCLI:
 
     def _handle_register(self, username, password, role):
         try:
-            self.client.register(username, password, role)
+            self.client.register(username, password)
 
             if RICH_AVAILABLE and console:
                 console.print(f"[green]Registration successful.[/green] Role: {role}. Please login.")

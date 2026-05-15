@@ -30,11 +30,11 @@ class AdriaClient:
             self.current_role = None
             self.crypto_key = None
 
-    def register(self, username, password, role="user"):
+    def register(self, username, password):
         """Registers a new user on the metadata server."""
         response = self.session.post(
             f"{self.metadata_url}/register",
-            json={"username": username, "password": password, "role": role},
+            json={"username": username, "password": password},
             timeout=self.request_timeout,
         )
         response.raise_for_status()
