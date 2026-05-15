@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
 
 # Test, coverage and quality-tool artifacts
 .pytest_cache/
@@ -41,6 +42,7 @@ server.error.log
 
 # Local databases.
 # Keep the canonical project database used by the tests/examples.
+data/
 *.db
 !data/metadata.db
 
@@ -50,6 +52,4 @@ server.error.log
 .DS_Store
 Thumbs.db
 *.zip
-*.zip
-*.zip
-*.zip
+
