@@ -143,3 +143,17 @@ class DatabaseManager:
             cur.execute('DELETE FROM chunks WHERE file_id = ?', (file_id,))
             cur.execute('DELETE FROM files WHERE id = ?', (file_id,))
             conn.commit()
+
+    def get_user_quota(self, owner_id):
+        """
+        Calculates the total storage footprint for a specific user.
+        Returns the total sum of bytes across all owned files.
+        """
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                'SELECT SUM(size) as total_size FROM files WHERE owner_id = ?', 
+                (owner_id,)
+            )
+            result = cur.fetchone()
+            return result['total_size'] or 0

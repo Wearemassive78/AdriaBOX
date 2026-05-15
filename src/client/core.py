@@ -205,3 +205,18 @@ class AdriaClient:
                 print(f"Warning: Could not delete chunk {chunk['chunk_filename']} from node: {e}")
 
         return True
+
+    def get_quota(self):
+        """
+        Requests the total storage usage for the currently logged-in user.
+        """
+        if not self.auth_token:
+            raise Exception("Authentication required. Please login first.")
+
+        response = self.session.get(
+            f"{self.metadata_url}/files/quota",
+            timeout=self.request_timeout
+        )
+        response.raise_for_status()
+        
+        return response.json().get("total_bytes", 0)

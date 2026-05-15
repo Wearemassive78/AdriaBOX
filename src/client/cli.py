@@ -149,7 +149,7 @@ class AdriaCLI:
         elif args.command == "ls":
             self._handle_ls(args.directory_path, args.l)
         elif args.command == "quota":
-            print("Quota command not implemented yet.")
+            self._handle_quota()
         elif args.command == "cluster-status":
             print("Cluster status command not implemented yet.")
         else:
@@ -233,14 +233,14 @@ class AdriaCLI:
         console.print()
         console.print(table)
 
-    def _handle_register(self, username, password, role):
+    def _handle_register(self, username, password):
         try:
             self.client.register(username, password)
 
             if RICH_AVAILABLE and console:
-                console.print(f"[green]Registration successful.[/green] Role: {role}. Please login.")
+                console.print(f"[green]Registration successful.[/green] Please login.")
             else:
-                print(f"Registration successful. Role: {role}. Please login.")
+                print(f"Registration successful. Please login.")
 
         except Exception as e:
             print(f"Error during registration: {e}")
@@ -366,6 +366,33 @@ class AdriaCLI:
                 print(f"File deleted successfully: {filename}")
         except Exception as e:
             print(f"Error deleting file: {e}")
+
+    def _handle_quota(self):
+        try:
+            total_bytes = self.client.get_quota()
+            
+            if RICH_AVAILABLE and console:
+                # Dynamically format the output to be human-readable
+                if total_bytes > 1024**3:
+                    size_str = f"{total_bytes / (1024**3):.2f} GB"
+                elif total_bytes > 1024**2:
+                    size_str = f"{total_bytes / (1024**2):.2f} MB"
+                elif total_bytes > 0:
+                    size_str = f"{total_bytes / 1024:.2f} KB"
+                else:
+                    size_str = "0 Bytes"
+                    
+                console.print(Panel(
+                    f"[bold cyan]Total Space Used:[/bold cyan] [green]{size_str}[/green]\n"
+                    f"[dim]({total_bytes} bytes)[/dim]",
+                    title="User Quota",
+                    width=40
+                ))
+            else:
+                print(f"Current Quota Usage: {total_bytes} bytes")
+                
+        except Exception as e:
+            print(f"Error retrieving quota: {e}")
 
 def main():
     if RICH_AVAILABLE and console:

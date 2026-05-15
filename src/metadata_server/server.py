@@ -60,6 +60,7 @@ class AdriaServer:
         self.app.add_url_rule("/files/download-plan", view_func=self.create_download_plan, methods=["GET"])
         self.app.add_url_rule("/files/list", view_func=self.list_files, methods=["GET"])
         self.app.add_url_rule("/files/remove", view_func=self.remove_file, methods=["DELETE"])
+        self.app.add_url_rule("/files/quota", view_func=self.get_quota, methods=["GET"])
 
     def _get_current_user(self):
         """Extracts and verifies the JWT token from the Authorization header."""
@@ -295,6 +296,21 @@ class AdriaServer:
         return jsonify({
             "message": "Metadata deleted successfully",
             "chunks": plan_chunks
+        }), 200
+
+    def get_quota(self):
+        """
+        Endpoint to retrieve the authenticated user's total storage usage.
+        """
+        current_user = self._get_current_user()
+        if not current_user:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        total_bytes = self.db.get_user_quota(current_user["user_id"])
+        
+        return jsonify({
+            "username": current_user["username"],
+            "total_bytes": total_bytes
         }), 200
 
 
