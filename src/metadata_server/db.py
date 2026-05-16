@@ -157,3 +157,17 @@ class DatabaseManager:
             )
             result = cur.fetchone()
             return result['total_size'] or 0
+
+    def rename_file(self, file_id, new_filename):
+        """
+        Updates the absolute path/filename of an existing file.
+        Used for moving and renaming operations (S3-style).
+        """
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                'UPDATE files SET filename = ? WHERE id = ?', 
+                (new_filename, file_id)
+            )
+            conn.commit()
+

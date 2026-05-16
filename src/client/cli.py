@@ -39,6 +39,7 @@ class AdriaCLI:
         self._add_cmd("rm", "adria rm <remote_filepath>\nPermanently deletes a file.", ["remote_filepath"])
         self._add_cmd("mkdir", "adria mkdir <directory_path>\nCreates a new remote directory.", ["directory_path"])
         self._add_cmd("rmdir", "adria rmdir <directory_path>\nRemoves a remote directory and its contents.", ["directory_path"])
+        self._add_cmd("mv", "adria mv <source> <destination>\nMoves or renames a file.", ["source", "destination"])
         
         ls_parser = self._add_cmd("ls", "adria ls [<directory_path>]\nLists directory contents.")
         ls_parser.add_argument("directory_path", nargs="?", default="/")
@@ -75,6 +76,7 @@ class AdriaCLI:
         elif args.command == "rmdir": self._handle_rmdir(args.directory_path)
         elif args.command == "ls": self._handle_ls(args.directory_path)
         elif args.command == "quota": self._handle_quota()
+        elif args.command == "mv": self._handle_mv(args.source, args.destination)
         else: self._show_help()
 
     def _get_current_user(self):
@@ -176,6 +178,17 @@ class AdriaCLI:
             self.client.rm(filename)
             (console.print(f"[yellow]File deleted successfully:[/yellow] {filename}") if RICH_AVAILABLE else print("Deleted."))
         except Exception as e: print(f"Error: {e}")
+
+    def _handle_mv(self, source, destination):
+        try:
+            result = self.client.mv(source, destination)
+            msg = result.get("message", "Moved successfully.")
+            if RICH_AVAILABLE and console:
+                console.print(f"[green]{msg}[/green]")
+            else:
+                print(msg)
+        except Exception as e:
+            print(f"Error: {e}")
 
     def _handle_quota(self):
         try:

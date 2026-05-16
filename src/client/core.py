@@ -5,6 +5,7 @@ from client.session import SessionManager
 from client.crypto import CryptoManager
 
 class AdriaClient:
+
     def __init__(self, metadata_url="http://localhost:5000", request_timeout=10.0):
         self.metadata_url = metadata_url
         self.request_timeout = request_timeout
@@ -115,6 +116,26 @@ class AdriaClient:
             try: ChunkDeleter(chunk["client_host"], int(chunk["tcp_port"]), timeout=self.request_timeout).delete(chunk["chunk_filename"])
             except Exception: pass
         return True
+
+    def mv(self, source, destination):
+        """
+        Moves or renames a remote file or directory.
+        """
+        if not self.auth_token: raise Exception("Authentication required.")
+        
+        response = self.session.post(
+            f"{self.metadata_url}/files/move", 
+            json={"source": source, "destination": destination}, 
+            timeout=self.request_timeout
+        )
+        
+        try:
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            try: error_msg = response.json().get("error", str(e))
+            except Exception: error_msg = f"Server returned {response.status_code}"
+            raise Exception(f"Failed to move: {error_msg}")
 
     def get_quota(self):
         if not self.auth_token: raise Exception("Authentication required.")

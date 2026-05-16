@@ -39,6 +39,7 @@ def load_storage_nodes():
     ]
 
 class AdriaServer:
+
     def __init__(self, db_path=DEFAULT_DB_PATH, secret_key="super-secret-master-key-for-adriabox"):
         self.app = Flask(__name__)
         self.db = DatabaseManager(db_path)
@@ -60,6 +61,7 @@ class AdriaServer:
         # Directory specific endpoints (S3 Philosophy)
         self.app.add_url_rule("/files/mkdir", view_func=self.make_directory, methods=["POST"])
         self.app.add_url_rule("/files/rmdir", view_func=self.remove_directory, methods=["DELETE"])
+        self.app.add_url_rule("/files/move", view_func=self.move_item, methods=["POST"])
 
     def _get_current_user(self):
         auth_header = request.headers.get("Authorization")
@@ -274,6 +276,80 @@ class AdriaServer:
 
         if files_deleted == 0: return jsonify({"error": "Directory not found or empty"}), 404
         return jsonify({"message": f"Deleted {files_deleted} items in directory", "chunks": chunks_to_delete}), 200
+
+    def move_item(self):
+        """
+        Moves or renames a file or an entire directory by updating prefixes.
+        """
+        current_user = self._get_current_user()
+        if not current_user: return jsonify({"error": "Unauthorized"}), 401
+
+        data = request.json or {}
+        source = data.get("source")
+        destination = data.get("destination")
+        
+        if not source or not destination: 
+            return jsonify({"error": "Missing source or destination"}), 400
+
+        # Normalize absolute paths
+        if not source.startswith("/"): source = "/" + source
+        if not destination.startswith("/"): destination = "/" + destination
+
+        exact_file = self.db.get_file_by_name(source)
+        moved_count = 0
+
+        # Scenario A: Moving a single specific file
+        if exact_file and not source.endswith("/"):
+            if exact_file["owner_id"] != current_user["user_id"]:
+                return jsonify({"error": "Forbidden"}), 403
+
+            # --- NUOVO: Controllo intelligente (Stile Linux) ---
+            # Se manca la barra finale, ma esiste già una directory con quel nome,
+            # la aggiungiamo noi automaticamente.
+            if not destination.endswith("/") and self.db.get_file_by_name(destination + "/"):
+                destination += "/"
+
+            # If destination is a folder (ends with /), put the file inside it
+            if destination.endswith("/"):
+                destination = destination + os.path.basename(source)
+            
+            if self.db.get_file_by_name(destination):
+                return jsonify({"error": "Destination file already exists"}), 409
+                
+            self.db.rename_file(exact_file["id"], destination)
+            moved_count = 1
+
+        # Scenario B: Moving an entire directory
+        else:
+            src_dir = source if source.endswith("/") else source + "/"
+            dest_dir = destination if destination.endswith("/") else destination + "/"
+            
+            all_files = self.db.get_user_files(current_user["user_id"])
+            files_to_move = [f for f in all_files if f.get("filename", "").startswith(src_dir)]
+            
+            if not files_to_move:
+                return jsonify({"error": "Source not found or empty"}), 404
+                
+            for f in files_to_move:
+                path = f.get("filename", "")
+                if not path.startswith("/"): path = "/" + path
+                
+                # Estrazione robusta dell'ID (come in rmdir)
+                file_id = f.get("id") or f.get("file_id")
+                if not file_id:
+                    db_record = self.db.get_file_by_name(path)
+                    if db_record:
+                        file_id = db_record.get("id") or db_record.get("file_id")
+                        
+                if not file_id:
+                    continue # Salta se la riga è illeggibile
+                    
+                # Calcola il nuovo percorso sostituendo il prefisso S3
+                new_path = dest_dir + path[len(src_dir):]
+                self.db.rename_file(file_id, new_path)
+                moved_count += 1
+        
+        return jsonify({"message": f"Successfully moved {moved_count} items."}), 200
 
     def get_quota(self):
         current_user = self._get_current_user()
