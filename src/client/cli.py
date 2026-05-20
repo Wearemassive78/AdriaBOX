@@ -105,8 +105,6 @@ class AdriaCLI:
         table.add_column("Usage", style="green")
         
         for cmd in sorted(self.commands_info.keys()):
-            if cmd in self.admin_commands and role != "admin":
-                continue
             parts = self.commands_info[cmd].split("\n", 1)
             if cmd in self.admin_commands:
                 table.add_row(f"[bold red]{cmd}[/bold red]", f"[red]{parts[0]}[/red]")
