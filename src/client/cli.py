@@ -105,6 +105,8 @@ class AdriaCLI:
         table.add_column("Usage", style="green")
         
         for cmd in sorted(self.commands_info.keys()):
+            if cmd in self.admin_commands and role != "admin":
+                continue
             parts = self.commands_info[cmd].split("\n", 1)
             if cmd in self.admin_commands:
                 table.add_row(f"[bold red]{cmd}[/bold red]", f"[red]{parts[0]}[/red]")
@@ -209,8 +211,22 @@ class AdriaCLI:
             else: print(size_str)
         except Exception as e: print(f"Error: {e}")
 
+    def _is_admin(self):
+        _, role = self._get_current_user()
+        return role == "admin"
+
+    def _print_admin_required(self):
+        msg = "Error: admin privileges required."
+        if RICH_AVAILABLE and console:
+            console.print(f"[bold red]{msg}[/bold red]")
+        else:
+            print(msg)
+
     def _handle_cluster_status(self):
         try:
+            if not self._is_admin():
+                return self._print_admin_required()
+
             status = self.client.cluster_status()
             metadata = status.get("metadata", {})
             nodes = status.get("nodes", [])
@@ -249,6 +265,9 @@ class AdriaCLI:
 
     def _handle_users(self):
         try:
+            if not self._is_admin():
+                return self._print_admin_required()
+
             users = self.client.admin_list_users()
             if RICH_AVAILABLE and console:
                 table = Table(show_header=True, header_style="bold magenta", box=None)
@@ -280,6 +299,9 @@ class AdriaCLI:
 
     def _handle_userdel(self, username):
         try:
+            if not self._is_admin():
+                return self._print_admin_required()
+
             admin_password = getpass.getpass("Admin password: ")
             result = self.client.admin_delete_user(username, admin_password)
             msg = result.get("message", f"User '{username}' deleted.")
