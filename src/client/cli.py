@@ -115,6 +115,7 @@ class AdriaCLI:
 
         user_text = f"[bold cyan]Username:[/bold cyan] {uname}\n[bold green]Role:[/bold green] {role}" if uname else "[yellow]Username:[/yellow] Not authenticated"
         console.print(Columns([Panel("[bold cyan]AdriaBOX CLI[/bold cyan]", width=55), Panel(user_text, title="Current user", width=35)]))
+        console.print(Panel("[bold red]Red[/bold red] = admin commands\n[cyan]Cyan[/cyan]/[green]green[/green] = user commands", title="Legend", border_style="dim"))
         console.print(table)
 
     def _handle_register(self, username, password):
