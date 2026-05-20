@@ -158,3 +158,29 @@ class AdriaClient:
             except Exception: error_msg = f"Server returned {response.status_code}"
             raise Exception(f"Admin action failed: {error_msg}")
 
+    def admin_delete_user(self, target_username, admin_password):
+        """
+        Deletes a user and their metadata.
+        Requires active admin session and the admin password.
+        """
+        if not self.auth_token: raise Exception("Authentication required.")
+
+        response = self.session.delete(
+            f"{self.metadata_url}/admin/userdel",
+            json={"target_username": target_username, "admin_password": admin_password},
+            timeout=self.request_timeout
+        )
+
+        try:
+            response.raise_for_status()
+            result = response.json()
+        except requests.exceptions.HTTPError as e:
+            try: error_msg = response.json().get("error", str(e))
+            except Exception: error_msg = f"Server returned {response.status_code}"
+            raise Exception(f"Admin action failed: {error_msg}")
+
+        from common.tcp import ChunkDeleter
+        for chunk in result.get("chunks", []):
+            try: ChunkDeleter(chunk["client_host"], int(chunk["tcp_port"]), timeout=self.request_timeout).delete(chunk["chunk_filename"])
+            except Exception: pass
+        return result

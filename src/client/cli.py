@@ -1,4 +1,5 @@
 import argparse
+import getpass
 import sys
 import jwt
 
@@ -47,6 +48,7 @@ class AdriaCLI:
         self._add_cmd("quota", "adria quota\nDisplays storage usage.")
         self._add_cmd("cluster-status", "adria cluster-status\nDisplays cluster health (Admin).")
         self._add_cmd("users", "adria users\nDisplays all registered users and their footprint (Admin).")
+        self._add_cmd("userdel", "adria userdel <username>\nDeletes a user and their files (Admin).", ["username"])
 
         config = load_client_config()
         self.client = AdriaClient(metadata_url=config.metadata_url, request_timeout=config.request_timeout)
@@ -79,6 +81,7 @@ class AdriaCLI:
         elif args.command == "quota": self._handle_quota()
         elif args.command == "mv": self._handle_mv(args.source, args.destination)
         elif args.command == "users": self._handle_users()        
+        elif args.command == "userdel": self._handle_userdel(args.username)
 
         else: self._show_help()
 
@@ -229,6 +232,18 @@ class AdriaCLI:
                 console.print(Panel(table, title="AdriaBOX Cluster Membership Directory", border_style="red"))
             else:
                 print(users)
+        except Exception as e:
+            print(f"Error: {e}")
+
+    def _handle_userdel(self, username):
+        try:
+            admin_password = getpass.getpass("Admin password: ")
+            result = self.client.admin_delete_user(username, admin_password)
+            msg = result.get("message", f"User '{username}' deleted.")
+            if RICH_AVAILABLE and console:
+                console.print(f"[yellow]{msg}[/yellow]")
+            else:
+                print(msg)
         except Exception as e:
             print(f"Error: {e}")
 
