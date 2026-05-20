@@ -25,6 +25,7 @@ class AdriaCLI:
         self.parser = argparse.ArgumentParser(description="AdriaBOX CLI Reference Manual", formatter_class=argparse.RawTextHelpFormatter, add_help=False)
         self.subparsers = self.parser.add_subparsers(dest="command", help="Available commands:")
         self.commands_info = {}
+        self.admin_commands = {"cluster-status", "users", "userdel"}
 
         self._add_cmd("register", "adria register <username> <password>\nCreates a new user account.", ["username", "password"])
         self._add_cmd("login", "adria login <username> <password>\nAuthenticates and retrieves a session token.", ["username", "password"])
@@ -104,7 +105,10 @@ class AdriaCLI:
         
         for cmd in sorted(self.commands_info.keys()):
             parts = self.commands_info[cmd].split("\n", 1)
-            table.add_row(cmd, parts[0])
+            if cmd in self.admin_commands:
+                table.add_row(f"[bold red]{cmd}[/bold red]", f"[red]{parts[0]}[/red]")
+            else:
+                table.add_row(cmd, parts[0])
 
         user_text = f"[bold cyan]Username:[/bold cyan] {uname}\n[bold green]Role:[/bold green] {role}" if uname else "[yellow]Username:[/yellow] Not authenticated"
         console.print(Columns([Panel("[bold cyan]AdriaBOX CLI[/bold cyan]", width=55), Panel(user_text, title="Current user", width=35)]))
