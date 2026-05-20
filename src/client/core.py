@@ -141,6 +141,54 @@ class AdriaClient:
         if not self.auth_token: raise Exception("Authentication required.")
         return self.session.get(f"{self.metadata_url}/files/quota", timeout=self.request_timeout).json().get("total_bytes", 0)
 
+    def cluster_status(self):
+        """
+        Returns metadata server health and probes each configured storage node.
+        """
+        if not self.auth_token: raise Exception("Authentication required.")
+
+        try:
+            response = self.session.get(f"{self.metadata_url}/health", timeout=self.request_timeout)
+            response.raise_for_status()
+            metadata = response.json()
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Metadata server is unavailable: {e}")
+
+        nodes = []
+        for node in metadata.get("nodes", []):
+            client_host = node.get("client_host") or node.get("host")
+            client_tcp_port = int(node.get("client_tcp_port") or node.get("tcp_port"))
+            http_port = int(node.get("client_http_port") or node.get("http_port") or client_tcp_port - 1000)
+            node_status = {
+                "node_id": node.get("node_id"),
+                "host": client_host,
+                "tcp_port": client_tcp_port,
+                "http_port": http_port,
+                "status": "offline",
+                "storage_dir": "-",
+                "error": None,
+            }
+
+            try:
+                health_url = f"http://{client_host}:{http_port}/health"
+                node_response = requests.get(health_url, timeout=min(self.request_timeout, 3.0))
+                node_response.raise_for_status()
+                node_health = node_response.json()
+                node_status["status"] = node_health.get("status", "ok")
+                node_status["storage_dir"] = node_health.get("storage_dir", "-")
+            except requests.exceptions.RequestException as e:
+                node_status["error"] = str(e)
+
+            nodes.append(node_status)
+
+        return {
+            "metadata": {
+                "status": metadata.get("status", "unknown"),
+                "url": self.metadata_url,
+            },
+            "nodes": nodes,
+        }
+
     def admin_list_users(self):
         """
         Requests the complete list of users and their quotas from the server.

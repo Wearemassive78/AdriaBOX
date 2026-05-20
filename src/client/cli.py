@@ -81,6 +81,7 @@ class AdriaCLI:
         elif args.command == "ls": self._handle_ls(args.directory_path)
         elif args.command == "quota": self._handle_quota()
         elif args.command == "mv": self._handle_mv(args.source, args.destination)
+        elif args.command == "cluster-status": self._handle_cluster_status()
         elif args.command == "users": self._handle_users()        
         elif args.command == "userdel": self._handle_userdel(args.username)
 
@@ -206,6 +207,44 @@ class AdriaCLI:
             size_str = f"{total / (1024**3):.2f} GB" if total > 1024**3 else f"{total / (1024**2):.2f} MB" if total > 1024**2 else f"{total / 1024:.2f} KB"
             if RICH_AVAILABLE: console.print(Panel(f"[bold cyan]Used:[/bold cyan] [green]{size_str}[/green]", title="Quota", width=30))
             else: print(size_str)
+        except Exception as e: print(f"Error: {e}")
+
+    def _handle_cluster_status(self):
+        try:
+            status = self.client.cluster_status()
+            metadata = status.get("metadata", {})
+            nodes = status.get("nodes", [])
+
+            if RICH_AVAILABLE and console:
+                table = Table(show_header=True, header_style="bold magenta", box=None)
+                table.add_column("Node", style="cyan")
+                table.add_column("Status", justify="center")
+                table.add_column("HTTP", style="dim")
+                table.add_column("TCP", style="dim")
+                table.add_column("Storage Dir", style="green")
+
+                for node in nodes:
+                    is_ok = node.get("status") == "ok"
+                    status_text = "[bold green]online[/bold green]" if is_ok else "[bold red]offline[/bold red]"
+                    table.add_row(
+                        str(node.get("node_id")),
+                        status_text,
+                        f"{node.get('host')}:{node.get('http_port')}",
+                        f"{node.get('host')}:{node.get('tcp_port')}",
+                        str(node.get("storage_dir") or "-")
+                    )
+
+                metadata_status = metadata.get("status", "unknown")
+                metadata_text = f"[bold green]{metadata_status}[/bold green]" if metadata_status == "ok" else f"[bold red]{metadata_status}[/bold red]"
+                console.print(Panel(
+                    table,
+                    title=f"Cluster Status - Metadata {metadata_text} ({metadata.get('url')})",
+                    border_style="red"
+                ))
+            else:
+                print(f"Metadata: {metadata.get('status')} ({metadata.get('url')})")
+                for node in nodes:
+                    print(f"{node.get('node_id')}: {node.get('status')} http={node.get('host')}:{node.get('http_port')} tcp={node.get('host')}:{node.get('tcp_port')}")
         except Exception as e: print(f"Error: {e}")
 
     def _handle_users(self):
