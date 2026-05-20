@@ -50,19 +50,16 @@ class AdriaServer:
         self.app.add_url_rule("/register", view_func=self.register, methods=["POST"])
         self.app.add_url_rule("/login", view_func=self.login, methods=["POST"])
         self.app.add_url_rule("/admin/users", view_func=self.admin_list_users, methods=["GET"])
-
-        # Filesystem Endpoints
         self.app.add_url_rule("/files/upload-plan", view_func=self.create_upload_plan, methods=["POST"])
         self.app.add_url_rule("/files/complete", view_func=self.complete_upload, methods=["POST"])
         self.app.add_url_rule("/files/download-plan", view_func=self.create_download_plan, methods=["GET"])
         self.app.add_url_rule("/files/list", view_func=self.list_files, methods=["GET"])
         self.app.add_url_rule("/files/remove", view_func=self.remove_file, methods=["DELETE"])
         self.app.add_url_rule("/files/quota", view_func=self.get_quota, methods=["GET"])
-        
-        # Directory specific endpoints (S3 Philosophy)
         self.app.add_url_rule("/files/mkdir", view_func=self.make_directory, methods=["POST"])
         self.app.add_url_rule("/files/rmdir", view_func=self.remove_directory, methods=["DELETE"])
         self.app.add_url_rule("/files/move", view_func=self.move_item, methods=["POST"])
+        self.app.add_url_rule("/admin/userdel", view_func=self.admin_delete_user, methods=["DELETE"])
 
     def _get_current_user(self):
         auth_header = request.headers.get("Authorization")
@@ -373,6 +370,70 @@ class AdriaServer:
 
         users_list = self.db.get_all_users_with_usage()
         return jsonify({"users": users_list}), 200
+
+    def admin_delete_user(self):
+        """
+        Admin Endpoint: Validates admin password, performs logical delete of a user 
+        and their files, and returns all orphaned chunk locations for physical cleanup.
+        """
+        current_user = self._get_current_user()
+        if not current_user or current_user.get("role") != "admin":
+            return jsonify({"error": "Forbidden: Admin privileges required."}), 403
+
+        data = request.json or {}
+        target_username = data.get("target_username")
+        admin_password = data.get("admin_password")
+
+        if not target_username or not admin_password:
+            return jsonify({"error": "Missing target username or admin password"}), 400
+
+        # 1. Verify admin password
+        admin_verified = self.db.verify_user(current_user["username"], admin_password)
+        if not admin_verified:
+            return jsonify({"error": "Authentication failed: Invalid admin password"}), 401
+
+        # 2. Find the target user
+        with self.db._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT id, role FROM users WHERE username = ?', (target_username,))
+            target_user = cur.fetchone()
+
+        if not target_user:
+            return jsonify({"error": "Target user not found"}), 404
+            
+        if target_user["role"] == "admin":
+            return jsonify({"error": "Safety violation: Cannot delete another admin via CLI."}), 400
+
+        target_user_id = target_user["id"]
+
+        # 3. Gather all physical chunk locations using explicit query to avoid Row Factory dict mismatches
+        chunks_to_delete = []
+        with self.db._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('''
+                SELECT c.chunk_filename, c.node_id 
+                FROM chunks c
+                JOIN files f ON c.file_id = f.id
+                WHERE f.owner_id = ?
+            ''', (target_user_id,))
+            rows = cur.fetchall()
+            
+            for row in rows:
+                node_cfg = next((n for n in self.storage_nodes if n["node_id"] == row["node_id"]), self.storage_nodes[0])
+                chunks_to_delete.append({
+                    "chunk_filename": row["chunk_filename"],
+                    "client_host": node_cfg["client_host"],
+                    "tcp_port": node_cfg["client_tcp_port"]
+                })
+
+        # 4. Perform atomic database purge
+        self.db.delete_user_and_metadata(target_user_id)
+
+        return jsonify({
+            "message": f"User '{target_username}' and metadata purged successfully.",
+            "chunks": chunks_to_delete
+        }), 200
+
 
 if __name__ == "__main__":
     server = AdriaServer()
