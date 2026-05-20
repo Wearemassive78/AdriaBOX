@@ -46,6 +46,7 @@ class AdriaCLI:
         
         self._add_cmd("quota", "adria quota\nDisplays storage usage.")
         self._add_cmd("cluster-status", "adria cluster-status\nDisplays cluster health (Admin).")
+        self._add_cmd("users", "adria users\nDisplays all registered users and their footprint (Admin).")
 
         config = load_client_config()
         self.client = AdriaClient(metadata_url=config.metadata_url, request_timeout=config.request_timeout)
@@ -77,6 +78,8 @@ class AdriaCLI:
         elif args.command == "ls": self._handle_ls(args.directory_path)
         elif args.command == "quota": self._handle_quota()
         elif args.command == "mv": self._handle_mv(args.source, args.destination)
+        elif args.command == "users": self._handle_users()        
+
         else: self._show_help()
 
     def _get_current_user(self):
@@ -197,6 +200,37 @@ class AdriaCLI:
             if RICH_AVAILABLE: console.print(Panel(f"[bold cyan]Used:[/bold cyan] [green]{size_str}[/green]", title="Quota", width=30))
             else: print(size_str)
         except Exception as e: print(f"Error: {e}")
+
+    def _handle_users(self):
+        try:
+            users = self.client.admin_list_users()
+            if RICH_AVAILABLE and console:
+                table = Table(show_header=True, header_style="bold magenta", box=None)
+                table.add_column("ID", style="dim", justify="center")
+                table.add_column("Username", style="cyan")
+                table.add_column("Role", style="green")
+                table.add_column("Space Used", justify="right")
+                table.add_column("Registered At", style="dim")
+
+                for u in users:
+                    total = u.get("total_used", 0)
+                    size_str = f"{total / (1024**3):.2f} GB" if total > 1024**3 else f"{total / (1024**2):.2f} MB" if total > 1024**2 else f"{total / 1024:.2f} KB" if total > 0 else "0 Bytes"
+                    
+                    # Highlight your own admin user
+                    role_style = f"[bold red]{u.get('role')}[/bold red]" if u.get("role") == "admin" else u.get("role")
+
+                    table.add_row(
+                        str(u.get("id")),
+                        u.get("username"),
+                        role_style,
+                        size_str,
+                        u.get("created_at")[:16].replace("T", " ")
+                    )
+                console.print(Panel(table, title="AdriaBOX Cluster Membership Directory", border_style="red"))
+            else:
+                print(users)
+        except Exception as e:
+            print(f"Error: {e}")
 
 def main():
     if RICH_AVAILABLE and console: console.print(Markdown("# :anchor: AdriaBOX\nA compact CLI for the AdriaBOX project."))

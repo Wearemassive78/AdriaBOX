@@ -23,7 +23,8 @@ class DatabaseManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE NOT NULL,
                     password_hash TEXT NOT NULL,
-                    role TEXT NOT NULL DEFAULT 'user'
+                    role TEXT NOT NULL DEFAULT 'user',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
 
@@ -170,4 +171,21 @@ class DatabaseManager:
                 (new_filename, file_id)
             )
             conn.commit()
+
+    def get_all_users_with_usage(self):
+        """
+        Admin query: retrieves a list of all registered users
+        alongside their combined storage footprint.
+        """
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('''
+                SELECT u.id, u.username, u.role, u.created_at,
+                       COALESCE(SUM(f.size), 0) as total_used
+                FROM users u
+                LEFT JOIN files f ON u.id = f.owner_id
+                GROUP BY u.id
+                ORDER BY total_used DESC
+            ''')
+            return [dict(row) for row in cur.fetchall()]
 

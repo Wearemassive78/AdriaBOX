@@ -140,3 +140,21 @@ class AdriaClient:
     def get_quota(self):
         if not self.auth_token: raise Exception("Authentication required.")
         return self.session.get(f"{self.metadata_url}/files/quota", timeout=self.request_timeout).json().get("total_bytes", 0)
+
+    def admin_list_users(self):
+        """
+        Requests the complete list of users and their quotas from the server.
+        Requires active admin session.
+        """
+        if not self.auth_token: raise Exception("Authentication required.")
+        
+        response = self.session.get(f"{self.metadata_url}/admin/users", timeout=self.request_timeout)
+        
+        try:
+            response.raise_for_status()
+            return response.json().get("users", [])
+        except requests.exceptions.HTTPError as e:
+            try: error_msg = response.json().get("error", str(e))
+            except Exception: error_msg = f"Server returned {response.status_code}"
+            raise Exception(f"Admin action failed: {error_msg}")
+

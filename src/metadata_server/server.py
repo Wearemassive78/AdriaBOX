@@ -49,7 +49,8 @@ class AdriaServer:
         self.app.add_url_rule("/health", view_func=self.health, methods=["GET"])
         self.app.add_url_rule("/register", view_func=self.register, methods=["POST"])
         self.app.add_url_rule("/login", view_func=self.login, methods=["POST"])
-        
+        self.app.add_url_rule("/admin/users", view_func=self.admin_list_users, methods=["GET"])
+
         # Filesystem Endpoints
         self.app.add_url_rule("/files/upload-plan", view_func=self.create_upload_plan, methods=["POST"])
         self.app.add_url_rule("/files/complete", view_func=self.complete_upload, methods=["POST"])
@@ -358,6 +359,20 @@ class AdriaServer:
 
     def run(self, host="0.0.0.0", port=5000):
         self.app.run(host=host, port=port, debug=True)
+
+    def admin_list_users(self):
+        """
+        Admin Endpoint: Returns a list of all users and their space usage.
+        Restricted to users with 'admin' role.
+        """
+        current_user = self._get_current_user()
+        if not current_user: 
+            return jsonify({"error": "Unauthorized"}), 401
+        if current_user.get("role") != "admin": 
+            return jsonify({"error": "Forbidden: Admin privileges required."}), 403
+
+        users_list = self.db.get_all_users_with_usage()
+        return jsonify({"users": users_list}), 200
 
 if __name__ == "__main__":
     server = AdriaServer()
