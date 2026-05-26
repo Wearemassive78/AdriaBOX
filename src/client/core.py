@@ -47,7 +47,6 @@ class AdriaClient:
 
         file_size, filename = os.path.getsize(local_filepath), os.path.basename(local_filepath)
 
-        # Request the 3-node pipeline replication plan from the Master Node
         plan = self.session.post(
             f"{self.metadata_url}/files/upload-plan", 
             json={"filename": filename, "size": file_size, "remote_dir": remote_dir}, 
@@ -65,9 +64,8 @@ class AdriaClient:
                 source.seek(chunk["offset"])
                 
                 primary = chunk["primary_node"]
-                pipeline_targets = chunk["pipeline"] # The downstream replication array
+                pipeline_targets = chunk["pipeline"]
 
-                # Connect to the primary node using external client network parameters
                 sender = ChunkStreamSender(
                     primary["client_host"], 
                     int(primary["tcp_port"]), 
@@ -75,7 +73,6 @@ class AdriaClient:
                     crypto_key=self.crypto_key
                 )
                 
-                # Execute the pipeline stream injection
                 success = sender.send_with_pipeline(
                     source, 
                     chunk["chunk_filename"], 
@@ -93,7 +90,6 @@ class AdriaClient:
                     "size": chunk["size"]
                 })
 
-        # Commit the transaction to the Master Node only when ALL pipelines returned ACK_OK
         return self.session.post(
             f"{self.metadata_url}/files/complete", 
             json={"file_id": plan["file_id"], "remote_path": plan["remote_path"], "chunks": uploaded_chunks, "size": file_size}, 
@@ -103,7 +99,6 @@ class AdriaClient:
     def download(self, filename, local_destination=None):
         if not self.auth_token or not self.crypto_key: 
             raise Exception("Authentication and encryption key required.")
-            
         local_destination = local_destination or os.path.join(os.getcwd(), os.path.basename(filename))
 
         plan = self.session.get(f"{self.metadata_url}/files/download-plan", params={"filename": filename}, timeout=self.request_timeout).json()
@@ -117,7 +112,6 @@ class AdriaClient:
                 chunk_success = False
                 last_error = None
                 
-                # Failover Loop: try every replica until one succeeds
                 for node in chunk.get("nodes", []):
                     try:
                         downloader = ChunkDownloader(
@@ -128,14 +122,12 @@ class AdriaClient:
                         )
                         downloader.download(chunk["chunk_filename"], dest_file, chunk["size"])
                         chunk_success = True
-                        break # Chunk downloaded successfully, break the replica loop
+                        break
                     except Exception as e:
                         last_error = e
-                        # Silently log the failure and attempt the next backup replica node
                         print(f"\n[Warning] Node {node['node_id']} unreachable for chunk {chunk['index']}. Trying backup replica...")
                 
                 if not chunk_success:
-                    # If all 3 nodes (Primary, Secondary, Tertiary) failed, the chunk is unrecoverable
                     raise Exception(f"Critical: Failed to retrieve chunk index {chunk['index']}. All replicas are offline. Last error: {last_error}")
                     
         return local_destination
@@ -165,15 +157,12 @@ class AdriaClient:
         
         response = self.session.delete(f"{self.metadata_url}/files/rmdir", params={"path": directory_path}, timeout=self.request_timeout)
         
-        # Safe JSON parsing to prevent "Expecting value" HTML crashes
         try:
             response.raise_for_status()
             plan = response.json()
         except requests.exceptions.HTTPError as e:
-            try:
-                error_msg = response.json().get("error", str(e))
-            except Exception:
-                error_msg = f"Server returned {response.status_code}. It might be offline or broken."
+            try: error_msg = response.json().get("error", str(e))
+            except Exception: error_msg = f"Server returned {response.status_code}. It might be offline or broken."
             raise Exception(f"Failed to remove directory: {error_msg}")
 
         from common.tcp import ChunkDeleter
@@ -183,9 +172,6 @@ class AdriaClient:
         return True
 
     def mv(self, source, destination):
-        """
-        Moves or renames a remote file or directory.
-        """
         if not self.auth_token: raise Exception("Authentication required.")
         
         response = self.session.post(
@@ -206,13 +192,14 @@ class AdriaClient:
         if not self.auth_token: raise Exception("Authentication required.")
         return self.session.get(f"{self.metadata_url}/files/quota", timeout=self.request_timeout).json().get("total_bytes", 0)
 
-    def admin_list_users(self):
-        """
-        Requests the complete list of users and their quotas from the server.
-        Requires active admin session.
-        """
+    def cluster_status(self):
         if not self.auth_token: raise Exception("Authentication required.")
-        
+        response = self.session.get(f"{self.metadata_url}/cluster-status", timeout=self.request_timeout)
+        response.raise_for_status()
+        return response.json()
+
+    def admin_list_users(self):
+        if not self.auth_token: raise Exception("Authentication required.")
         response = self.session.get(f"{self.metadata_url}/admin/users", timeout=self.request_timeout)
         
         try:
@@ -224,35 +211,24 @@ class AdriaClient:
             raise Exception(f"Admin action failed: {error_msg}")
 
     def admin_delete_user(self, target_username, admin_password):
-        """
-        Requests the complete deletion of a user and gathers their chunk mappings
-        for local TCP physical destruction.
-        """
         if not self.auth_token: raise Exception("Authentication required.")
-        
         response = self.session.delete(
             f"{self.metadata_url}/admin/userdel",
             json={"target_username": target_username, "admin_password": admin_password},
             timeout=self.request_timeout
         )
-        
+
         try:
             response.raise_for_status()
-            plan = response.json()
+            result = response.json()
         except requests.exceptions.HTTPError as e:
             try: error_msg = response.json().get("error", str(e))
             except Exception: error_msg = f"Server returned {response.status_code}"
-            raise Exception(f"Purge failed: {error_msg}")
+            raise Exception(f"Admin action failed: {error_msg}")
 
-        # Physical deletion loop over TCP protocol (Command X)
         from common.tcp import ChunkDeleter
-        deleted_count = 0
-        for chunk in plan.get("chunks", []):
-            try:
-                deleter = ChunkDeleter(chunk["client_host"], int(chunk["tcp_port"]), timeout=self.request_timeout)
-                if deleter.delete(chunk["chunk_filename"]):
-                    deleted_count += 1
-            except Exception:
-                pass
-        return deleted_count
+        for chunk in result.get("chunks", []):
+            try: ChunkDeleter(chunk["client_host"], int(chunk["tcp_port"]), timeout=self.request_timeout).delete(chunk["chunk_filename"])
+            except Exception: pass
+        return result
 

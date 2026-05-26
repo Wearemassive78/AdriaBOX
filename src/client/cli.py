@@ -1,4 +1,5 @@
 import argparse
+import getpass
 import sys
 import jwt
 
@@ -24,6 +25,7 @@ class AdriaCLI:
         self.parser = argparse.ArgumentParser(description="AdriaBOX CLI Reference Manual", formatter_class=argparse.RawTextHelpFormatter, add_help=False)
         self.subparsers = self.parser.add_subparsers(dest="command", help="Available commands:")
         self.commands_info = {}
+        self.admin_commands = {"cluster-status", "users", "userdel"}
 
         self._add_cmd("register", "adria register <username> <password>\nCreates a new user account.", ["username", "password"])
         self._add_cmd("login", "adria login <username> <password>\nAuthenticates and retrieves a session token.", ["username", "password"])
@@ -47,6 +49,7 @@ class AdriaCLI:
         self._add_cmd("quota", "adria quota\nDisplays storage usage.")
         self._add_cmd("cluster-status", "adria cluster-status\nDisplays cluster health (Admin).")
         self._add_cmd("users", "adria users\nDisplays all registered users and their footprint (Admin).")
+        self._add_cmd("userdel", "adria userdel <username>\nDeletes a user and their files (Admin).", ["username"])
 
         config = load_client_config()
         self.client = AdriaClient(metadata_url=config.metadata_url, request_timeout=config.request_timeout)
@@ -78,7 +81,9 @@ class AdriaCLI:
         elif args.command == "ls": self._handle_ls(args.directory_path)
         elif args.command == "quota": self._handle_quota()
         elif args.command == "mv": self._handle_mv(args.source, args.destination)
+        elif args.command == "cluster-status": self._handle_cluster_status()
         elif args.command == "users": self._handle_users()        
+        elif args.command == "userdel": self._handle_userdel(args.username)
 
         else: self._show_help()
 
@@ -101,10 +106,14 @@ class AdriaCLI:
         
         for cmd in sorted(self.commands_info.keys()):
             parts = self.commands_info[cmd].split("\n", 1)
-            table.add_row(cmd, parts[0])
+            if cmd in self.admin_commands:
+                table.add_row(f"[bold red]{cmd}[/bold red]", f"[red]{parts[0]}[/red]")
+            else:
+                table.add_row(cmd, parts[0])
 
         user_text = f"[bold cyan]Username:[/bold cyan] {uname}\n[bold green]Role:[/bold green] {role}" if uname else "[yellow]Username:[/yellow] Not authenticated"
         console.print(Columns([Panel("[bold cyan]AdriaBOX CLI[/bold cyan]", width=55), Panel(user_text, title="Current user", width=35)]))
+        console.print(Panel("[bold red]Red[/bold red] = admin commands\n[cyan]Cyan[/cyan]/[green]green[/green] = user commands", title="Legend", border_style="dim"))
         console.print(table)
 
     def _handle_register(self, username, password):
@@ -201,8 +210,63 @@ class AdriaCLI:
             else: print(size_str)
         except Exception as e: print(f"Error: {e}")
 
+    def _is_admin(self):
+        _, role = self._get_current_user()
+        return role == "admin"
+
+    def _print_admin_required(self):
+        msg = "Error: admin privileges required."
+        if RICH_AVAILABLE and console:
+            console.print(f"[bold red]{msg}[/bold red]")
+        else:
+            print(msg)
+
+    def _handle_cluster_status(self):
+        try:
+            if not self._is_admin():
+                return self._print_admin_required()
+
+            status = self.client.cluster_status()
+            metadata = status.get("metadata", {})
+            nodes = status.get("nodes", [])
+
+            if RICH_AVAILABLE and console:
+                table = Table(show_header=True, header_style="bold magenta", box=None)
+                table.add_column("Node", style="cyan")
+                table.add_column("Status", justify="center")
+                table.add_column("HTTP", style="dim")
+                table.add_column("TCP", style="dim")
+                table.add_column("Storage Dir", style="green")
+
+                for node in nodes:
+                    is_ok = node.get("status") == "ok"
+                    status_text = "[bold green]online[/bold green]" if is_ok else "[bold red]offline[/bold red]"
+                    table.add_row(
+                        str(node.get("node_id")),
+                        status_text,
+                        f"{node.get('host')}:{node.get('http_port')}",
+                        f"{node.get('host')}:{node.get('tcp_port')}",
+                        str(node.get("storage_dir") or "-")
+                    )
+
+                metadata_status = metadata.get("status", "unknown")
+                metadata_text = f"[bold green]{metadata_status}[/bold green]" if metadata_status == "ok" else f"[bold red]{metadata_status}[/bold red]"
+                console.print(Panel(
+                    table,
+                    title=f"Cluster Status - Metadata {metadata_text} ({metadata.get('url')})",
+                    border_style="red"
+                ))
+            else:
+                print(f"Metadata: {metadata.get('status')} ({metadata.get('url')})")
+                for node in nodes:
+                    print(f"{node.get('node_id')}: {node.get('status')} http={node.get('host')}:{node.get('http_port')} tcp={node.get('host')}:{node.get('tcp_port')}")
+        except Exception as e: print(f"Error: {e}")
+
     def _handle_users(self):
         try:
+            if not self._is_admin():
+                return self._print_admin_required()
+
             users = self.client.admin_list_users()
             if RICH_AVAILABLE and console:
                 table = Table(show_header=True, header_style="bold magenta", box=None)
@@ -229,6 +293,21 @@ class AdriaCLI:
                 console.print(Panel(table, title="AdriaBOX Cluster Membership Directory", border_style="red"))
             else:
                 print(users)
+        except Exception as e:
+            print(f"Error: {e}")
+
+    def _handle_userdel(self, username):
+        try:
+            if not self._is_admin():
+                return self._print_admin_required()
+
+            admin_password = getpass.getpass("Admin password: ")
+            result = self.client.admin_delete_user(username, admin_password)
+            msg = result.get("message", f"User '{username}' deleted.")
+            if RICH_AVAILABLE and console:
+                console.print(f"[yellow]{msg}[/yellow]")
+            else:
+                print(msg)
         except Exception as e:
             print(f"Error: {e}")
 
