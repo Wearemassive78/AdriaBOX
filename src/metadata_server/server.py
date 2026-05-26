@@ -111,28 +111,57 @@ class AdriaServer:
 
         if not filename: return jsonify({"error": "Missing filename"}), 400
         
-        # S3 Philosophy: We store the absolute path as the filename
         full_path = os.path.join(remote_dir, filename).replace("\\", "/")
         if not full_path.startswith("/"): full_path = "/" + full_path
 
         chunk_count = 1 if file_size == 0 else max(1, math.ceil(file_size / LOGICAL_BLOCK_SIZE))
+        
+        # Enforce replication factor of 3 in metadata
         file_id = self.db.add_file(full_path, file_size, chunk_count, owner_id=current_user["user_id"])
 
         chunks, offset, node_count = [], 0, len(self.storage_nodes)
+        
+        if node_count < 3:
+            return jsonify({"error": "System misconfiguration: at least 3 storage nodes required for replication."}), 500
+
         for index in range(chunk_count):
-            node = self.storage_nodes[index % node_count]
             size = min(LOGICAL_BLOCK_SIZE, file_size - offset)
             if size <= 0 and index == 0: size = 0
                 
             chunk_filename = f"{file_id}_{index}_{os.path.basename(filename)}.chunk"
+            
+            # Chained Round-Robin Selection to build a 3-node pipeline
+            # Ensures distinct nodes are picked sequentially from the pool
+            n1 = self.storage_nodes[index % node_count]
+            n2 = self.storage_nodes[(index + 1) % node_count]
+            n3 = self.storage_nodes[(index + 2) % node_count]
+
             chunks.append({
-                "index": index, "offset": offset, "size": size, "chunk_filename": chunk_filename,
-                "node_id": node["node_id"], "host": node["host"], "tcp_port": node["client_tcp_port"],
-                "client_host": node["client_host"],
+                "index": index,
+                "offset": offset,
+                "size": size,
+                "chunk_filename": chunk_filename,
+                # Primary destination for the client (using client-facing network)
+                "primary_node": {
+                    "node_id": n1["node_id"],
+                    "client_host": n1["client_host"],
+                    "tcp_port": n1["client_tcp_port"]
+                },
+                # Downstream pipeline targets (using internal cluster network)
+                "pipeline": [
+                    {"node_id": n2["node_id"], "host": n2["host"], "tcp_port": n2["tcp_port"]},
+                    {"node_id": n3["node_id"], "host": n3["host"], "tcp_port": n3["tcp_port"]}
+                ]
             })
             offset += size
 
-        return jsonify({"file_id": file_id, "filename": full_path, "remote_path": full_path, "size": file_size, "chunks": chunks}), 200
+        return jsonify({
+            "file_id": file_id,
+            "filename": full_path,
+            "remote_path": full_path,
+            "size": file_size,
+            "chunks": chunks
+        }), 200
 
     def create_download_plan(self):
         current_user = self._get_current_user()
@@ -146,17 +175,40 @@ class AdriaServer:
 
         file_info = self.db.get_file_by_name(filename)
         if not file_info: return jsonify({"error": "File not found"}), 404
-        if file_info["owner_id"] != current_user["user_id"] and current_user["role"] != "admin": return jsonify({"error": "Forbidden"}), 403
+        if file_info["owner_id"] != current_user["user_id"] and current_user["role"] != "admin": 
+            return jsonify({"error": "Forbidden"}), 403
 
         plan_chunks = []
+        node_count = len(self.storage_nodes)
+
         for c in self.db.get_chunks_by_file_id(file_info["id"]):
-            node_cfg = next((n for n in self.storage_nodes if n["node_id"] == c["node_id"]), self.storage_nodes[0])
+            idx = c["chunk_index"]
+            
+            # Reconstruct the exact 3-node deterministic pipeline used during upload
+            n1 = self.storage_nodes[idx % node_count]
+            n2 = self.storage_nodes[(idx + 1) % node_count]
+            n3 = self.storage_nodes[(idx + 2) % node_count]
+
+            # Build the prioritized fallback list for the client
+            replicas = [
+                {"node_id": n1["node_id"], "client_host": n1["client_host"], "tcp_port": n1["client_tcp_port"]},
+                {"node_id": n2["node_id"], "client_host": n2["client_host"], "tcp_port": n2["client_tcp_port"]},
+                {"node_id": n3["node_id"], "client_host": n3["client_host"], "tcp_port": n3["client_tcp_port"]}
+            ]
+
             plan_chunks.append({
-                "index": c["chunk_index"], "chunk_filename": c["chunk_filename"], "size": c["size"],
-                "node_id": c["node_id"], "client_host": node_cfg["client_host"], "tcp_port": node_cfg["client_tcp_port"]
+                "index": idx,
+                "chunk_filename": c["chunk_filename"],
+                "size": c["size"],
+                "nodes": replicas # The client will iterate through this list if a node is offline
             })
 
-        return jsonify({"file_id": file_info["id"], "filename": filename, "size": file_info["size"], "chunks": plan_chunks}), 200
+        return jsonify({
+            "file_id": file_info["id"], 
+            "filename": filename, 
+            "size": file_info["size"], 
+            "chunks": plan_chunks
+        }), 200
 
     def complete_upload(self):
         current_user = self._get_current_user()

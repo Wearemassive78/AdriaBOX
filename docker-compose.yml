@@ -1,37 +1,176 @@
+networks:
+  adriabox-net:
+    driver: bridge
+
 services:
   metadata:
     build: .
-    image: adriabox:latest
+    container_name: adriabox-metadata-1
     command: python src/metadata_server/server.py
-    environment:
-      ADRIABOX_STORAGE_NODES: "storage1:storage1:7001:localhost:7001,storage2:storage2:7002:localhost:7002,storage3:storage3:7003:localhost:7003"
     ports:
       - "5000:5000"
-    depends_on:
-      - storage1
-      - storage2
-      - storage3
+    volumes:
+      - ./data:/app/data
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
+      - ADRIABOX_STORAGE_NODES=storage1:storage1:7001:127.0.0.1:7001,storage2:storage2:7002:127.0.0.1:7002,storage3:storage3:7003:127.0.0.1:7003,storage4:storage4:7004:127.0.0.1:7004,storage5:storage5:7005:127.0.0.1:7005,storage6:storage6:7006:127.0.0.1:7006,storage7:storage7:7007:127.0.0.1:7007,storage8:storage8:7008:127.0.0.1:7008,storage9:storage9:7009:127.0.0.1:7009,storage10:storage10:7010:127.0.0.1:7010,storage11:storage11:7011:127.0.0.1:7011,storage12:storage12:7012:127.0.0.1:7012
+
+  # --- STORAGE CLUSTER NODES (Corrected Flags) ---
 
   storage1:
     build: .
-    image: adriabox:latest
-    command: python src/storage_node/node.py --http-port 6001 --tcp-port 7001 --storage-dir /app/data/storage1
+    container_name: adriabox-storage-1
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7001 --storage-dir /app/storage/storage1
     ports:
-      - "6001:6001"
       - "7001:7001"
+    volumes:
+      - ./data/storage/storage1:/app/storage/storage1
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
 
   storage2:
     build: .
-    image: adriabox:latest
-    command: python src/storage_node/node.py --http-port 6002 --tcp-port 7002 --storage-dir /app/data/storage2
+    container_name: adriabox-storage-2
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7002 --storage-dir /app/storage/storage2
     ports:
-      - "6002:6002"
       - "7002:7002"
+    volumes:
+      - ./data/storage/storage2:/app/storage/storage2
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
 
   storage3:
     build: .
-    image: adriabox:latest
-    command: python src/storage_node/node.py --http-port 6003 --tcp-port 7003 --storage-dir /app/data/storage3
+    container_name: adriabox-storage-3
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7003 --storage-dir /app/storage/storage3
     ports:
-      - "6003:6003"
       - "7003:7003"
+    volumes:
+      - ./data/storage/storage3:/app/storage/storage3
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
+
+  storage4:
+    build: .
+    container_name: adriabox-storage-4
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7004 --storage-dir /app/storage/storage4
+    ports:
+      - "7004:7004"
+    volumes:
+      - ./data/storage/storage4:/app/storage/storage4
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
+
+  storage5:
+    build: .
+    container_name: adriabox-storage-5
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7005 --storage-dir /app/storage/storage5
+    ports:
+      - "7005:7005"
+    volumes:
+      - ./data/storage/storage5:/app/storage/storage5
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
+
+  storage6:
+    build: .
+    container_name: adriabox-storage-6
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7006 --storage-dir /app/storage/storage6
+    ports:
+      - "7006:7006"
+    volumes:
+      - ./data/storage/storage6:/app/storage/storage6
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
+
+  storage7:
+    build: .
+    container_name: adriabox-storage-7
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7007 --storage-dir /app/storage/storage7
+    ports:
+      - "7007:7007"
+    volumes:
+      - ./data/storage/storage7:/app/storage/storage7
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
+
+  storage8:
+    build: .
+    container_name: adriabox-storage-8
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7008 --storage-dir /app/storage/storage8
+    ports:
+      - "7008:7008"
+    volumes:
+      - ./data/storage/storage8:/app/storage/storage8
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
+
+  storage9:
+    build: .
+    container_name: adriabox-storage-9
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7009 --storage-dir /app/storage/storage9
+    ports:
+      - "7009:7009"
+    volumes:
+      - ./data/storage/storage9:/app/storage/storage9
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
+
+  storage10:
+    build: .
+    container_name: adriabox-storage-10
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7010 --storage-dir /app/storage/storage10
+    ports:
+      - "7010:7010"
+    volumes:
+      - ./data/storage/storage10:/app/storage/storage10
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
+
+  storage11:
+    build: .
+    container_name: adriabox-storage-11
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7011 --storage-dir /app/storage/storage11
+    ports:
+      - "7011:7011"
+    volumes:
+      - ./data/storage/storage11:/app/storage/storage11
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src
+
+  storage12:
+    build: .
+    container_name: adriabox-storage-12
+    command: python src/storage_node/node.py --host 0.0.0.0 --tcp-port 7012 --storage-dir /app/storage/storage12
+    ports:
+      - "7012:7012"
+    volumes:
+      - ./data/storage/storage12:/app/storage/storage12
+    networks:
+      - adriabox-net
+    environment:
+      - PYTHONPATH=/app/src

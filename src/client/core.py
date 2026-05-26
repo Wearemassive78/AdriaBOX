@@ -47,32 +47,97 @@ class AdriaClient:
 
         file_size, filename = os.path.getsize(local_filepath), os.path.basename(local_filepath)
 
-        plan = self.session.post(f"{self.metadata_url}/files/upload-plan", json={"filename": filename, "size": file_size, "remote_dir": remote_dir}, timeout=self.request_timeout).json()
+        # Request the 3-node pipeline replication plan from the Master Node
+        plan = self.session.post(
+            f"{self.metadata_url}/files/upload-plan", 
+            json={"filename": filename, "size": file_size, "remote_dir": remote_dir}, 
+            timeout=self.request_timeout
+        ).json()
+
+        if "error" in plan:
+            raise Exception(f"Upload plan rejected by Master: {plan['error']}")
 
         from common.tcp import ChunkStreamSender
         uploaded_chunks = []
+        
         with open(local_filepath, "rb") as source:
             for chunk in plan.get("chunks", []):
                 source.seek(chunk["offset"])
-                sender = ChunkStreamSender(chunk["client_host"], int(chunk["tcp_port"]), timeout=self.request_timeout, crypto_key=self.crypto_key)
+                
+                primary = chunk["primary_node"]
+                pipeline_targets = chunk["pipeline"] # The downstream replication array
+
+                # Connect to the primary node using external client network parameters
+                sender = ChunkStreamSender(
+                    primary["client_host"], 
+                    int(primary["tcp_port"]), 
+                    timeout=self.request_timeout, 
+                    crypto_key=self.crypto_key
+                )
+                
+                # Execute the pipeline stream injection
+                success = sender.send_with_pipeline(
+                    source, 
+                    chunk["chunk_filename"], 
+                    chunk["size"], 
+                    pipeline_targets
+                )
+                
+                if not success:
+                    raise Exception(f"Pipeline replication failed for chunk index {chunk['index']}")
+
                 uploaded_chunks.append({
-                    "index": chunk["index"], "chunk_filename": chunk["chunk_filename"], "node_id": chunk["node_id"],
-                    "size": chunk["size"], "sha256": sender.send(source, chunk["chunk_filename"], chunk["size"])
+                    "index": chunk["index"],
+                    "chunk_filename": chunk["chunk_filename"],
+                    "node_id": primary["node_id"],
+                    "size": chunk["size"]
                 })
 
-        return self.session.post(f"{self.metadata_url}/files/complete", json={"file_id": plan["file_id"], "remote_path": plan["remote_path"], "chunks": uploaded_chunks, "size": file_size}, timeout=self.request_timeout).json()
+        # Commit the transaction to the Master Node only when ALL pipelines returned ACK_OK
+        return self.session.post(
+            f"{self.metadata_url}/files/complete", 
+            json={"file_id": plan["file_id"], "remote_path": plan["remote_path"], "chunks": uploaded_chunks, "size": file_size}, 
+            timeout=self.request_timeout
+        ).json()
 
     def download(self, filename, local_destination=None):
-        if not self.auth_token or not self.crypto_key: raise Exception("Authentication and encryption key required.")
+        if not self.auth_token or not self.crypto_key: 
+            raise Exception("Authentication and encryption key required.")
+            
         local_destination = local_destination or os.path.join(os.getcwd(), os.path.basename(filename))
 
         plan = self.session.get(f"{self.metadata_url}/files/download-plan", params={"filename": filename}, timeout=self.request_timeout).json()
+        if "error" in plan:
+            raise Exception(f"Download rejected by Master: {plan['error']}")
 
         from common.tcp import ChunkDownloader
+        
         with open(local_destination, "wb") as dest_file:
             for chunk in plan.get("chunks", []):
-                downloader = ChunkDownloader(chunk["client_host"], int(chunk["tcp_port"]), timeout=self.request_timeout, crypto_key=self.crypto_key)
-                downloader.download(chunk["chunk_filename"], dest_file, chunk["size"])
+                chunk_success = False
+                last_error = None
+                
+                # Failover Loop: try every replica until one succeeds
+                for node in chunk.get("nodes", []):
+                    try:
+                        downloader = ChunkDownloader(
+                            node["client_host"], 
+                            int(node["tcp_port"]), 
+                            timeout=self.request_timeout, 
+                            crypto_key=self.crypto_key
+                        )
+                        downloader.download(chunk["chunk_filename"], dest_file, chunk["size"])
+                        chunk_success = True
+                        break # Chunk downloaded successfully, break the replica loop
+                    except Exception as e:
+                        last_error = e
+                        # Silently log the failure and attempt the next backup replica node
+                        print(f"\n[Warning] Node {node['node_id']} unreachable for chunk {chunk['index']}. Trying backup replica...")
+                
+                if not chunk_success:
+                    # If all 3 nodes (Primary, Secondary, Tertiary) failed, the chunk is unrecoverable
+                    raise Exception(f"Critical: Failed to retrieve chunk index {chunk['index']}. All replicas are offline. Last error: {last_error}")
+                    
         return local_destination
 
     def list_files(self, directory_path="/"):
@@ -157,4 +222,37 @@ class AdriaClient:
             try: error_msg = response.json().get("error", str(e))
             except Exception: error_msg = f"Server returned {response.status_code}"
             raise Exception(f"Admin action failed: {error_msg}")
+
+    def admin_delete_user(self, target_username, admin_password):
+        """
+        Requests the complete deletion of a user and gathers their chunk mappings
+        for local TCP physical destruction.
+        """
+        if not self.auth_token: raise Exception("Authentication required.")
+        
+        response = self.session.delete(
+            f"{self.metadata_url}/admin/userdel",
+            json={"target_username": target_username, "admin_password": admin_password},
+            timeout=self.request_timeout
+        )
+        
+        try:
+            response.raise_for_status()
+            plan = response.json()
+        except requests.exceptions.HTTPError as e:
+            try: error_msg = response.json().get("error", str(e))
+            except Exception: error_msg = f"Server returned {response.status_code}"
+            raise Exception(f"Purge failed: {error_msg}")
+
+        # Physical deletion loop over TCP protocol (Command X)
+        from common.tcp import ChunkDeleter
+        deleted_count = 0
+        for chunk in plan.get("chunks", []):
+            try:
+                deleter = ChunkDeleter(chunk["client_host"], int(chunk["tcp_port"]), timeout=self.request_timeout)
+                if deleter.delete(chunk["chunk_filename"]):
+                    deleted_count += 1
+            except Exception:
+                pass
+        return deleted_count
 
