@@ -189,3 +189,24 @@ class DatabaseManager:
             ''')
             return [dict(row) for row in cur.fetchall()]
 
+    def delete_user_and_metadata(self, target_user_id):
+        """
+        Admin Operation: Deletes a user, their files, and all associated
+        chunk metadata from the database in a single atomic transaction.
+        """
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            # 1. Delete all chunk metadata belonging to the user's files
+            cur.execute('''
+                DELETE FROM chunks WHERE file_id IN (
+                    SELECT id FROM files WHERE owner_id = ?
+                )
+            ''', (target_user_id,))
+            
+            # 2. Delete all files records owned by the user
+            cur.execute('DELETE FROM files WHERE owner_id = ?', (target_user_id,))
+            
+            # 3. Delete the user account itself
+            cur.execute('DELETE FROM users WHERE id = ?', (target_user_id,))
+            conn.commit()
+

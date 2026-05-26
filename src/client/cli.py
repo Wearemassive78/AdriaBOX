@@ -84,7 +84,6 @@ class AdriaCLI:
         elif args.command == "cluster-status": self._handle_cluster_status()
         elif args.command == "users": self._handle_users()        
         elif args.command == "userdel": self._handle_userdel(args.username)
-
         else: self._show_help()
 
     def _get_current_user(self):
@@ -105,6 +104,8 @@ class AdriaCLI:
         table.add_column("Usage", style="green")
         
         for cmd in sorted(self.commands_info.keys()):
+            if cmd in self.admin_commands and role != "admin":
+                continue
             parts = self.commands_info[cmd].split("\n", 1)
             if cmd in self.admin_commands:
                 table.add_row(f"[bold red]{cmd}[/bold red]", f"[red]{parts[0]}[/red]")
@@ -223,8 +224,7 @@ class AdriaCLI:
 
     def _handle_cluster_status(self):
         try:
-            if not self._is_admin():
-                return self._print_admin_required()
+            if not self._is_admin(): return self._print_admin_required()
 
             status = self.client.cluster_status()
             metadata = status.get("metadata", {})
@@ -251,11 +251,7 @@ class AdriaCLI:
 
                 metadata_status = metadata.get("status", "unknown")
                 metadata_text = f"[bold green]{metadata_status}[/bold green]" if metadata_status == "ok" else f"[bold red]{metadata_status}[/bold red]"
-                console.print(Panel(
-                    table,
-                    title=f"Cluster Status - Metadata {metadata_text} ({metadata.get('url')})",
-                    border_style="red"
-                ))
+                console.print(Panel(table, title=f"Cluster Status - Metadata {metadata_text} ({metadata.get('url')})", border_style="red"))
             else:
                 print(f"Metadata: {metadata.get('status')} ({metadata.get('url')})")
                 for node in nodes:
@@ -264,8 +260,7 @@ class AdriaCLI:
 
     def _handle_users(self):
         try:
-            if not self._is_admin():
-                return self._print_admin_required()
+            if not self._is_admin(): return self._print_admin_required()
 
             users = self.client.admin_list_users()
             if RICH_AVAILABLE and console:
@@ -279,37 +274,23 @@ class AdriaCLI:
                 for u in users:
                     total = u.get("total_used", 0)
                     size_str = f"{total / (1024**3):.2f} GB" if total > 1024**3 else f"{total / (1024**2):.2f} MB" if total > 1024**2 else f"{total / 1024:.2f} KB" if total > 0 else "0 Bytes"
-                    
-                    # Highlight your own admin user
                     role_style = f"[bold red]{u.get('role')}[/bold red]" if u.get("role") == "admin" else u.get("role")
 
-                    table.add_row(
-                        str(u.get("id")),
-                        u.get("username"),
-                        role_style,
-                        size_str,
-                        u.get("created_at")[:16].replace("T", " ")
-                    )
+                    table.add_row(str(u.get("id")), u.get("username"), role_style, size_str, u.get("created_at")[:16].replace("T", " "))
                 console.print(Panel(table, title="AdriaBOX Cluster Membership Directory", border_style="red"))
-            else:
-                print(users)
-        except Exception as e:
-            print(f"Error: {e}")
+            else: print(users)
+        except Exception as e: print(f"Error: {e}")
 
     def _handle_userdel(self, username):
         try:
-            if not self._is_admin():
-                return self._print_admin_required()
+            if not self._is_admin(): return self._print_admin_required()
 
             admin_password = getpass.getpass("Admin password: ")
             result = self.client.admin_delete_user(username, admin_password)
             msg = result.get("message", f"User '{username}' deleted.")
-            if RICH_AVAILABLE and console:
-                console.print(f"[yellow]{msg}[/yellow]")
-            else:
-                print(msg)
-        except Exception as e:
-            print(f"Error: {e}")
+            if RICH_AVAILABLE and console: console.print(f"[yellow]{msg}[/yellow]")
+            else: print(msg)
+        except Exception as e: print(f"Error: {e}")
 
 def main():
     if RICH_AVAILABLE and console: console.print(Markdown("# :anchor: AdriaBOX\nA compact CLI for the AdriaBOX project."))
