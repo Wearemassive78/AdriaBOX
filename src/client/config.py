@@ -17,5 +17,5 @@ def load_client_config() -> ClientConfig:
     """Load client settings from environment variables."""
     return ClientConfig(
         metadata_url=os.environ.get("ADRIABOX_METADATA_URL", DEFAULT_METADATA_URL),
-        request_timeout=float(os.environ.get("ADRIABOX_REQUEST_TIMEOUT", "10")),
+        request_timeout=float(os.environ.get("ADRIABOX_REQUEST_TIMEOUT", "60")),
     )
