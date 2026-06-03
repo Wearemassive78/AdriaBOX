@@ -1,3 +1,4 @@
+"""Controller routing system for the AdriaBOX command-line interface."""
 import argparse
 import getpass
 import sys
@@ -6,19 +7,8 @@ import jwt
 from client.core import AdriaClient
 from client.session import SessionManager
 from client.config import load_client_config
+import client.ui as ui
 
-try:
-    from rich.console import Console
-    from rich.panel import Panel
-    from rich.markdown import Markdown
-    from rich.table import Table
-    from rich.columns import Columns
-
-    RICH_AVAILABLE = True
-    console = Console()
-except Exception:
-    RICH_AVAILABLE = False
-    console = None
 
 class AdriaCLI:
     def __init__(self):
@@ -62,29 +52,29 @@ class AdriaCLI:
         return parser
 
     def run(self):
-        if len(sys.argv) == 1 or sys.argv[1] in ("-h", "--help"): return self._show_help()
+        if len(sys.argv) == 1 or sys.argv[1] in ("-h", "--help"): 
+            return self._show_help()
         args = self.parser.parse_args()
 
-        if args.command == "register": self._handle_register(args.username, args.password)
-        elif args.command == "login": self._handle_login(args.username, args.password)
-        elif args.command == "whoami": self._handle_whoami()
-        elif args.command == "logout": self._handle_logout()
-        elif args.command == "upload": self._handle_upload(args.local_filepath, args.destination)
-        elif args.command == "download":
-            try:
-                dest = self.client.download(args.filename, args.output)
-                (console.print(f"[green]Successfully downloaded to:[/green] {dest}") if RICH_AVAILABLE else print(f"Successfully downloaded to: {dest}"))
-            except Exception as e: print(f"Error during download: {e}")
-        elif args.command == "rm": self._handle_rm(args.remote_filepath)
-        elif args.command == "mkdir": self._handle_mkdir(args.directory_path)
-        elif args.command == "rmdir": self._handle_rmdir(args.directory_path)
-        elif args.command == "ls": self._handle_ls(args.directory_path)
-        elif args.command == "quota": self._handle_quota()
-        elif args.command == "mv": self._handle_mv(args.source, args.destination)
-        elif args.command == "cluster-status": self._handle_cluster_status()
-        elif args.command == "users": self._handle_users()        
-        elif args.command == "userdel": self._handle_userdel(args.username)
-        else: self._show_help()
+        try:
+            if args.command == "register": self._handle_register(args.username, args.password)
+            elif args.command == "login": self._handle_login(args.username, args.password)
+            elif args.command == "whoami": self._handle_whoami()
+            elif args.command == "logout": self._handle_logout()
+            elif args.command == "upload": self._handle_upload(args.local_filepath, args.destination)
+            elif args.command == "download": self._handle_download(args.filename, args.output)
+            elif args.command == "rm": self._handle_rm(args.remote_filepath)
+            elif args.command == "mkdir": self._handle_mkdir(args.directory_path)
+            elif args.command == "rmdir": self._handle_rmdir(args.directory_path)
+            elif args.command == "ls": self._handle_ls(args.directory_path)
+            elif args.command == "quota": self._handle_quota()
+            elif args.command == "mv": self._handle_mv(args.source, args.destination)
+            elif args.command == "cluster-status": self._handle_cluster_status()
+            elif args.command == "users": self._handle_users()        
+            elif args.command == "userdel": self._handle_userdel(args.username)
+            else: self._show_help()
+        except Exception as e:
+            ui.print_error(str(e))
 
     def _get_current_user(self):
         sm = SessionManager()
@@ -97,204 +87,85 @@ class AdriaCLI:
         return None, None
 
     def _show_help(self):
-        if not RICH_AVAILABLE: return self.parser.print_help()
         uname, role = self._get_current_user()
-        table = Table(show_header=True, header_style="bold magenta")
-        table.add_column("Command", style="cyan", no_wrap=True)
-        table.add_column("Usage", style="green")
-        
-        for cmd in sorted(self.commands_info.keys()):
-            if cmd in self.admin_commands and role != "admin":
-                continue
-            parts = self.commands_info[cmd].split("\n", 1)
-            if cmd in self.admin_commands:
-                table.add_row(f"[bold red]{cmd}[/bold red]", f"[red]{parts[0]}[/red]")
-            else:
-                table.add_row(cmd, parts[0])
-
-        user_text = f"[bold cyan]Username:[/bold cyan] {uname}\n[bold green]Role:[/bold green] {role}" if uname else "[yellow]Username:[/yellow] Not authenticated"
-        console.print(Columns([Panel("[bold cyan]AdriaBOX CLI[/bold cyan]", width=55), Panel(user_text, title="Current user", width=35)]))
-        console.print(Panel("[bold red]Red[/bold red] = admin commands\n[cyan]Cyan[/cyan]/[green]green[/green] = user commands", title="Legend", border_style="dim"))
-        console.print(table)
-
-    def _handle_register(self, username, password):
-        try:
-            self.client.register(username, password)
-            (console.print("[green]Registration successful.[/green] Please login.") if RICH_AVAILABLE else print("Registration successful. Please login."))
-        except Exception as e: print(f"Error: {e}")
-
-    def _handle_login(self, username, password):
-        try:
-            self.client.login(username, password)
-            (console.print("[green]Login successful.[/green] Session active.") if RICH_AVAILABLE else print("Login successful."))
-        except Exception as e: print(f"Error: {e}")
-
-    def _handle_logout(self):
-        try:
-            self.client.logout()
-            (console.print("[yellow]Logged out successfully.[/yellow]") if RICH_AVAILABLE else print("Logged out."))
-        except Exception as e: print(f"Error: {e}")
-
-    def _handle_whoami(self):
-        uname, role = self._get_current_user()
-        msg = f"[bold]{uname}[/bold] — [green]{role}[/green]" if uname else "[yellow]Not authenticated[/yellow]"
-        (console.print(msg) if RICH_AVAILABLE else print(msg.replace('[bold]', '').replace('[/bold]', '')))
-
-    def _handle_upload(self, local_filepath, destination):
-        try:
-            result = self.client.upload(local_filepath, destination)
-            if RICH_AVAILABLE:
-                table = Table(show_header=True, header_style="bold magenta")
-                table.add_column("Chunk", style="cyan"); table.add_column("Node", style="green"); table.add_column("Bytes")
-                for c in result.get("chunks", []): table.add_row(str(c["index"]), c["node_id"], str(c["size"]))
-                console.print(f"[green]Upload completed:[/green] {result.get('remote_path')}"); console.print(table)
-            else: print(f"Upload completed: {result.get('remote_path')}")
-        except Exception as e: print(f"Error during upload: {e}")
-
-    def _handle_ls(self, directory_path):
-        try:
-            files = self.client.list_files(directory_path)
-            if RICH_AVAILABLE:
-                table = Table(show_header=True, header_style="bold magenta", box=None)
-                table.add_column("Name", style="cyan")
-                table.add_column("Type", style="blue")
-                table.add_column("Size", justify="right")
-                table.add_column("Chunks", style="dim", justify="center")
-
-                for f in files:
-                    is_dir, name = f.get("is_dir", False), f.get("filename")
-                    if is_dir:
-                        table.add_row(f"[bold blue]🗀  {name}[/bold blue]", "[bold blue]DIR[/bold blue]", "-", "-")
-                    else:
-                        size_val = f.get('size', 0)
-                        readable_size = f"{size_val / (1024**3):.2f} GB" if size_val > 1024**3 else f"{size_val / (1024**2):.2f} MB" if size_val > 1024**2 else f"{size_val / 1024:.2f} KB"
-                        table.add_row(f"📄 {name}", "FILE", readable_size, str(f.get("chunks")))
-                
-                console.print(Panel(table, title=f"Remote Filesystem: {directory_path}", border_style="blue"))
-            else: print(files)
-        except Exception as e: print(f"Error: {e}")
-
-    def _handle_mkdir(self, directory_path):
-        try:
-            self.client.mkdir(directory_path)
-            (console.print(f"[green]Directory created:[/green] {directory_path}") if RICH_AVAILABLE else print("Created."))
-        except Exception as e: print(f"Error: {e}")
-
-    def _handle_rmdir(self, directory_path):
-        try:
-            self.client.rmdir(directory_path)
-            (console.print(f"[yellow]Directory removed:[/yellow] {directory_path}") if RICH_AVAILABLE else print("Removed."))
-        except Exception as e: print(f"Error: {e}")
-
-    def _handle_rm(self, filename):
-        try:
-            self.client.rm(filename)
-            (console.print(f"[yellow]File deleted successfully:[/yellow] {filename}") if RICH_AVAILABLE else print("Deleted."))
-        except Exception as e: print(f"Error: {e}")
-
-    def _handle_mv(self, source, destination):
-        try:
-            result = self.client.mv(source, destination)
-            msg = result.get("message", "Moved successfully.")
-            if RICH_AVAILABLE and console:
-                console.print(f"[green]{msg}[/green]")
-            else:
-                print(msg)
-        except Exception as e:
-            print(f"Error: {e}")
-
-    def _handle_quota(self):
-        try:
-            total = self.client.get_quota()
-            size_str = f"{total / (1024**3):.2f} GB" if total > 1024**3 else f"{total / (1024**2):.2f} MB" if total > 1024**2 else f"{total / 1024:.2f} KB"
-            if RICH_AVAILABLE: console.print(Panel(f"[bold cyan]Used:[/bold cyan] [green]{size_str}[/green]", title="Quota", width=30))
-            else: print(size_str)
-        except Exception as e: print(f"Error: {e}")
+        ui.render_help(uname, role, self.commands_info, self.admin_commands)
 
     def _is_admin(self):
         _, role = self._get_current_user()
         return role == "admin"
 
-    def _print_admin_required(self):
-        msg = "Error: admin privileges required."
-        if RICH_AVAILABLE and console:
-            console.print(f"[bold red]{msg}[/bold red]")
+    def _handle_register(self, username, password):
+        self.client.register(username, password)
+        ui.print_success("Registration successful. Please login.")
+
+    def _handle_login(self, username, password):
+        self.client.login(username, password)
+        ui.print_success("Login successful. Session active.")
+
+    def _handle_logout(self):
+        self.client.logout()
+        ui.print_warning("Logged out successfully.")
+
+    def _handle_whoami(self):
+        uname, role = self._get_current_user()
+        if uname:
+            ui.print_success(f"{uname} — role: {role}")
         else:
-            print(msg)
+            ui.print_warning("Not authenticated")
+
+    def _handle_upload(self, local_filepath, destination):
+        result = self.client.upload(local_filepath, destination)
+        ui.render_upload_complete(result)
+
+    def _handle_download(self, filename, output):
+        dest = self.client.download(filename, output)
+        ui.print_success(f"Successfully downloaded to: {dest}")
+
+    def _handle_ls(self, directory_path):
+        files = self.client.list_files(directory_path)
+        ui.render_ls(directory_path, files)
+
+    def _handle_mkdir(self, directory_path):
+        self.client.mkdir(directory_path)
+        ui.print_success(f"Directory created: {directory_path}")
+
+    def _handle_rmdir(self, directory_path):
+        self.client.rmdir(directory_path)
+        ui.print_warning(f"Directory removed: {directory_path}")
+
+    def _handle_rm(self, filename):
+        self.client.rm(filename)
+        ui.print_warning(f"File deleted successfully: {filename}")
+
+    def _handle_mv(self, source, destination):
+        result = self.client.mv(source, destination)
+        ui.print_success(result.get("message", "Moved successfully."))
+
+    def _handle_quota(self):
+        total = self.client.get_quota()
+        ui.render_quota(total)
 
     def _handle_cluster_status(self):
-        try:
-            if not self._is_admin(): return self._print_admin_required()
-
-            status = self.client.cluster_status()
-            metadata = status.get("metadata", {})
-            nodes = status.get("nodes", [])
-
-            if RICH_AVAILABLE and console:
-                table = Table(show_header=True, header_style="bold magenta", box=None)
-                table.add_column("Node", style="cyan")
-                table.add_column("Status", justify="center")
-                table.add_column("HTTP", style="dim")
-                table.add_column("TCP", style="dim")
-                table.add_column("Storage Dir", style="green")
-
-                for node in nodes:
-                    is_ok = node.get("status") == "ok"
-                    status_text = "[bold green]online[/bold green]" if is_ok else "[bold red]offline[/bold red]"
-                    table.add_row(
-                        str(node.get("node_id")),
-                        status_text,
-                        f"{node.get('host')}:{node.get('http_port')}",
-                        f"{node.get('host')}:{node.get('tcp_port')}",
-                        str(node.get("storage_dir") or "-")
-                    )
-
-                metadata_status = metadata.get("status", "unknown")
-                metadata_text = f"[bold green]{metadata_status}[/bold green]" if metadata_status == "ok" else f"[bold red]{metadata_status}[/bold red]"
-                console.print(Panel(table, title=f"Cluster Status - Metadata {metadata_text} ({metadata.get('url')})", border_style="red"))
-            else:
-                print(f"Metadata: {metadata.get('status')} ({metadata.get('url')})")
-                for node in nodes:
-                    print(f"{node.get('node_id')}: {node.get('status')} http={node.get('host')}:{node.get('http_port')} tcp={node.get('host')}:{node.get('tcp_port')}")
-        except Exception as e: print(f"Error: {e}")
+        if not self._is_admin(): raise Exception("Admin privileges required.")
+        status = self.client.cluster_status()
+        ui.render_cluster_status(status)
 
     def _handle_users(self):
-        try:
-            if not self._is_admin(): return self._print_admin_required()
-
-            users = self.client.admin_list_users()
-            if RICH_AVAILABLE and console:
-                table = Table(show_header=True, header_style="bold magenta", box=None)
-                table.add_column("ID", style="dim", justify="center")
-                table.add_column("Username", style="cyan")
-                table.add_column("Role", style="green")
-                table.add_column("Space Used", justify="right")
-                table.add_column("Registered At", style="dim")
-
-                for u in users:
-                    total = u.get("total_used", 0)
-                    size_str = f"{total / (1024**3):.2f} GB" if total > 1024**3 else f"{total / (1024**2):.2f} MB" if total > 1024**2 else f"{total / 1024:.2f} KB" if total > 0 else "0 Bytes"
-                    role_style = f"[bold red]{u.get('role')}[/bold red]" if u.get("role") == "admin" else u.get("role")
-
-                    table.add_row(str(u.get("id")), u.get("username"), role_style, size_str, u.get("created_at")[:16].replace("T", " "))
-                console.print(Panel(table, title="AdriaBOX Cluster Membership Directory", border_style="red"))
-            else: print(users)
-        except Exception as e: print(f"Error: {e}")
+        if not self._is_admin(): raise Exception("Admin privileges required.")
+        users = self.client.admin_list_users()
+        ui.render_users(users)
 
     def _handle_userdel(self, username):
-        try:
-            if not self._is_admin(): return self._print_admin_required()
+        if not self._is_admin(): raise Exception("Admin privileges required.")
+        admin_password = getpass.getpass("Admin password: ")
+        result = self.client.admin_delete_user(username, admin_password)
+        ui.print_warning(result.get("message", f"User '{username}' deleted."))
 
-            admin_password = getpass.getpass("Admin password: ")
-            result = self.client.admin_delete_user(username, admin_password)
-            msg = result.get("message", f"User '{username}' deleted.")
-            if RICH_AVAILABLE and console: console.print(f"[yellow]{msg}[/yellow]")
-            else: print(msg)
-        except Exception as e: print(f"Error: {e}")
 
 def main():
-    if RICH_AVAILABLE and console: console.print(Markdown("# :anchor: AdriaBOX\nA compact CLI for the AdriaBOX project."))
+    ui.render_welcome()
     AdriaCLI().run()
 
-if __name__ == "__main__": main()
+if __name__ == "__main__":
+    main()
 

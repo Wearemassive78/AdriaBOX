@@ -11,3 +11,6 @@ class ClientValidationError(AdriaClientError, ValueError):
 
 class AuthenticationError(AdriaClientError):
     """Raised when an authenticated action has no active token."""
+
+class BackendServerError(AdriaClientError):
+    """Raised when the Metadata Server returns an explicit operational error (e.g., 400, 409)."""

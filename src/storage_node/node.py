@@ -1,69 +1,47 @@
+"""Concurrent multi-threaded background daemon for AdriaBOX physical storage nodes."""
 import argparse
-import os
 import socket
-import sys
 import threading
-
-from flask import Flask, jsonify
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
+import os
 from common.tcp import FileReceiver
 
+def handle_client_connection(conn: socket.socket, storage_dir: str):
+    """Isolate the connection context inside a dedicated execution thread context."""
+    receiver = FileReceiver(conn, storage_dir)
+    receiver.serve()
 
-app = Flask(__name__)
-
-DEFAULT_DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-DATA_DIR = os.environ.get("ADRIABOX_STORAGE_DIR", DEFAULT_DATA_DIR)
-os.makedirs(DATA_DIR, exist_ok=True)
-
-
-def handle_tcp_client(conn, addr, storage_dir=None):
-    receiver = FileReceiver(conn, storage_dir or DATA_DIR)
-    return receiver.serve()
-
-def run_tcp_server(host, port):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind((host, port))
-    sock.listen(5)
-    print(f"Storage node TCP listening on {host}:{port}, dir={DATA_DIR}")
-    try:
-        while True:
-            conn, addr = sock.accept()
-            threading.Thread(
-                target=handle_tcp_client,
-                args=(conn, addr),
-                daemon=True,
-            ).start()
-    finally:
-        sock.close()
-
-
-@app.route("/health")
-def health():
-    return jsonify({"status": "ok", "storage_dir": DATA_DIR})
-
-
-@app.route("/files")
-def files():
-    return jsonify(sorted(os.listdir(DATA_DIR)))
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--tcp-port", type=int, default=7001)
-    parser.add_argument("--http-port", type=int, default=6001)
-    parser.add_argument("--storage-dir", default=DATA_DIR)
+def main():
+    parser = argparse.ArgumentParser(description="AdriaBOX Distributed Storage Node Runtime daemon.")
+    parser.add_argument("--host", default="0.0.0.0", help="Network binding interface topology setup.")
+    parser.add_argument("--tcp-port", type=int, required=True, help="Network target entry TCP port assignment.")
+    parser.add_argument("--storage-dir", required=True, help="Target isolated physical partition location root mapping.")
     args = parser.parse_args()
 
-    DATA_DIR = args.storage_dir
-    os.makedirs(DATA_DIR, exist_ok=True)
+    os.makedirs(args.storage_dir, exist_ok=True)
+    
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    try:
+        server_socket.bind((args.host, args.tcp_port))
+        server_socket.listen(128) # High capacity backlog threshold allocation
+        print(f"[Active] AdriaBOX Storage Server listening on TCP interface {args.host}:{args.tcp_port}")
+        
+        while True:
+            conn, addr = server_socket.accept()
+            # Spawning an independent parallel worker thread to maintain stateless non-blocking operations
+            client_thread = threading.Thread(
+                target=handle_client_connection,
+                args=(conn, args.storage_dir),
+                daemon=True
+            )
+            client_thread.start()
+            
+    except Exception as e:
+        print(f"[Critical Fault] Storage server engine crashed unexpectedly: {e}")
+    finally:
+        server_socket.close()
 
-    threading.Thread(
-        target=run_tcp_server,
-        args=(args.host, args.tcp_port),
-        daemon=True,
-    ).start()
-    app.run(host=args.host, port=args.http_port)
+if __name__ == "__main__":
+    main()
+
