@@ -24,7 +24,6 @@ def _auth_and_route(handler_func, *args, **kwargs):
         return jsonify({"error": f"Internal structural failure: {str(e)}"}), 500
 
 
-@app.route("/register", channels=["POST"])
 @app.route("/register", methods=["POST"])
 def register():
     data = request.json or {}

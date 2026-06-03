@@ -40,17 +40,23 @@ class AdriaMetadataManager:
         return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
     def authorize_request(self, auth_header: str) -> dict:
-        """Intercept and decode incoming bearer authentication tokens."""
+        """Intercept, decode, and strictly validate incoming bearer authentication tokens against the active database."""
         if not auth_header or not auth_header.startswith("Bearer "):
-            raise PermissionError("Missing or malformed Authorization header.")
+            raise PermissionError("Authentication required. Please login.")
+            
         token = auth_header.split(" ")[1]
         try:
-            return jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        except jwt.ExpiredSignatureError:
-            raise PermissionError("Session token expired.")
-        except jwt.InvalidTokenError:
-            raise PermissionError("Cryptographic token corruption detected.")
+            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
 
+            user = self.db.get_user_by_username(payload.get("username"))
+            if not user or user["id"] != payload.get("user_id"):
+                raise PermissionError("Active session identity missing or deleted from the server. Please login again.")
+                
+            return payload
+        except jwt.ExpiredSignatureError:
+            raise PermissionError("Session token expired. Please login again.")
+        except jwt.InvalidTokenError:
+            raise PermissionError("Invalid or corrupted session token. Please logout and login again.")
     def build_upload_plan(self, user_ctx: dict, filename: str, file_size: int, remote_dir: str) -> dict:
         """Execute Chained Round-Robin matrix routing to generate a 3-node replication pipeline."""
         if len(self.storage_nodes) < 3:
