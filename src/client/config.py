@@ -10,7 +10,7 @@ class ClientConfig:
     """Settings needed by the command-line client."""
 
     metadata_url: str = DEFAULT_METADATA_URL
-    request_timeout: float = 10.0
+    request_timeout: float = 60.0
 
 
 def load_client_config() -> ClientConfig:
