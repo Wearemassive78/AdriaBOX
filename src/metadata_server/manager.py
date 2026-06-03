@@ -1,4 +1,4 @@
-"""Logic engine for the AdriaBOX Metadata Controller."""
+"""Business logic engine for the AdriaBOX Metadata Controller."""
 import os
 import math
 import jwt
@@ -27,36 +27,28 @@ class AdriaMetadataManager:
                 })
         return nodes
 
-    def generate_token(self, username: str) -> str:
-        """Provision a cryptographically signed stateful JWT token for session authority."""
-        user = self.db.get_user_by_username(username)
-        if not user:
-            raise ValueError("User footprint missing from repository.")
-            
+    def generate_token(self, user_dict: dict) -> str:
+        """Provision a cryptographically signed stateful JWT token from verified database records."""
         payload = {
-            "user_id": user["id"], "username": username, "role": user["role"],
+            "user_id": user_dict["id"], 
+            "username": user_dict["username"], 
+            "role": user_dict["role"],
             "exp": datetime.utcnow() + timedelta(hours=24)
         }
         return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
     def authorize_request(self, auth_header: str) -> dict:
-        """Intercept, decode, and strictly validate incoming bearer authentication tokens against the active database."""
+        """Intercept and decode incoming bearer authentication tokens."""
         if not auth_header or not auth_header.startswith("Bearer "):
-            raise PermissionError("Authentication required. Please login.")
-            
+            raise PermissionError("Missing or malformed Authorization header.")
         token = auth_header.split(" ")[1]
         try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-
-            user = self.db.get_user_by_username(payload.get("username"))
-            if not user or user["id"] != payload.get("user_id"):
-                raise PermissionError("Active session identity missing or deleted from the server. Please login again.")
-                
-            return payload
+            return jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         except jwt.ExpiredSignatureError:
-            raise PermissionError("Session token expired. Please login again.")
+            raise PermissionError("Session token expired.")
         except jwt.InvalidTokenError:
-            raise PermissionError("Invalid or corrupted session token. Please logout and login again.")
+            raise PermissionError("Cryptographic token corruption detected.")
+
     def build_upload_plan(self, user_ctx: dict, filename: str, file_size: int, remote_dir: str) -> dict:
         """Execute Chained Round-Robin matrix routing to generate a 3-node replication pipeline."""
         if len(self.storage_nodes) < 3:
@@ -67,6 +59,8 @@ class AdriaMetadataManager:
             full_path = "/" + full_path
 
         chunk_count = 1 if file_size == 0 else max(1, math.ceil(file_size / LOGICAL_BLOCK_SIZE))
+        
+        # Invokes your native db.add_file method
         file_id = self.db.add_file(full_path, file_size, chunk_count, owner_id=user_ctx["user_id"])
 
         chunks, offset = [], 0
@@ -78,7 +72,6 @@ class AdriaMetadataManager:
             
             chunk_filename = f"{file_id}_{index}_{os.path.basename(filename)}.chunk"
             
-            # Deterministic Chained Round-Robin selector
             n1 = self.storage_nodes[index % node_count]
             n2 = self.storage_nodes[(index + 1) % node_count]
             n3 = self.storage_nodes[(index + 2) % node_count]
@@ -102,6 +95,7 @@ class AdriaMetadataManager:
         if not filename.startswith("/"): 
             filename = "/" + filename
 
+        # Invokes your native db.get_file_by_name method
         file_info = self.db.get_file_by_name(filename)
         if not file_info:
             raise FileNotFoundError("Target object reference missing from ledger.")
@@ -112,10 +106,10 @@ class AdriaMetadataManager:
         plan_chunks = []
         node_count = len(self.storage_nodes)
 
+        # Invokes your native db.get_chunks_by_file_id method
         for c in self.db.get_chunks_by_file_id(file_info["id"]):
             idx = c["chunk_index"]
             
-            # Reconstruct the pipeline cluster sequence
             n1 = self.storage_nodes[idx % node_count]
             n2 = self.storage_nodes[(idx + 1) % node_count]
             n3 = self.storage_nodes[(idx + 2) % node_count]
@@ -134,9 +128,10 @@ class AdriaMetadataManager:
     def commit_file_chunks(self, file_id: int, chunks: list):
         """Persist chunk transactional positioning inside the relational metadata ledger."""
         for chunk in chunks:
-            self.db.add_chunk(
+            # Invokes your native db.save_chunk_metadata method
+            self.db.save_chunk_metadata(
                 file_id=file_id, chunk_index=chunk["index"],
-                chunk_filename=chunk["chunk_filename"],
-                node_id=chunk["node_id"], size=chunk["size"]
+                node_id=chunk["node_id"], chunk_filename=chunk["chunk_filename"],
+                size=chunk["size"]
             )
 
