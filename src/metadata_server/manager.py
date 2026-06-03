@@ -1,4 +1,4 @@
-"""Business logic engine for the AdriaBOX Metadata Controller."""
+"""Logic engine for the AdriaBOX Metadata Controller."""
 import os
 import math
 import jwt
@@ -28,7 +28,7 @@ class AdriaMetadataManager:
         return nodes
 
     def generate_token(self, user_dict: dict) -> str:
-        """Provision a cryptographically signed stateful JWT token from verified database records."""
+        """Provision a cryptographically signed stateful JWT token using pre-verified user data."""
         payload = {
             "user_id": user_dict["id"], 
             "username": user_dict["username"], 
@@ -50,7 +50,7 @@ class AdriaMetadataManager:
             raise PermissionError("Cryptographic token corruption detected.")
 
     def build_upload_plan(self, user_ctx: dict, filename: str, file_size: int, remote_dir: str) -> dict:
-        """Execute Chained Round-Robin matrix routing to generate a 3-node replication pipeline."""
+        """Execute Chained Round-Robin matrix routing matching native db positioning."""
         if len(self.storage_nodes) < 3:
             raise RuntimeError("Cluster isolation hazard: At least 3 active nodes required for replication.")
 
@@ -60,8 +60,8 @@ class AdriaMetadataManager:
 
         chunk_count = 1 if file_size == 0 else max(1, math.ceil(file_size / LOGICAL_BLOCK_SIZE))
         
-        # Invokes your native db.add_file method
-        file_id = self.db.add_file(full_path, file_size, chunk_count, owner_id=user_ctx["user_id"])
+        # Matches db.add_file(filename, size, chunks, owner_id) exactly
+        file_id = self.db.add_file(full_path, file_size, chunk_count, user_ctx["user_id"])
 
         chunks, offset = [], 0
         node_count = len(self.storage_nodes)
@@ -95,7 +95,6 @@ class AdriaMetadataManager:
         if not filename.startswith("/"): 
             filename = "/" + filename
 
-        # Invokes your native db.get_file_by_name method
         file_info = self.db.get_file_by_name(filename)
         if not file_info:
             raise FileNotFoundError("Target object reference missing from ledger.")
@@ -106,7 +105,6 @@ class AdriaMetadataManager:
         plan_chunks = []
         node_count = len(self.storage_nodes)
 
-        # Invokes your native db.get_chunks_by_file_id method
         for c in self.db.get_chunks_by_file_id(file_info["id"]):
             idx = c["chunk_index"]
             
@@ -126,12 +124,12 @@ class AdriaMetadataManager:
         return {"file_id": file_info["id"], "filename": filename, "size": file_info["size"], "chunks": plan_chunks}
 
     def commit_file_chunks(self, file_id: int, chunks: list):
-        """Persist chunk transactional positioning inside the relational metadata ledger."""
+        """Persist chunk data matching db.save_chunk_metadata(file_id, chunk_index, node_id, chunk_filename, size)."""
         for chunk in chunks:
-            # Invokes your native db.save_chunk_metadata method
             self.db.save_chunk_metadata(
-                file_id=file_id, chunk_index=chunk["index"],
-                node_id=chunk["node_id"], chunk_filename=chunk["chunk_filename"],
+                file_id=file_id, 
+                chunk_index=chunk["index"],
+                node_id=chunk["node_id"], 
+                chunk_filename=chunk["chunk_filename"], 
                 size=chunk["size"]
             )
-

@@ -30,11 +30,10 @@ def register():
     if not username or not password:
         return jsonify({"error": "Credential criteria unsatisfied."}), 400
     try:
-        # Invokes your native db.register_user method
         manager.db.register_user(username, password)
         return jsonify({"message": "Identity instantiated successfully."}), 201
     except ValueError as e:
-        return jsonify({"error": str(e)}), 409  # Explicit Conflict response for duplicate users
+        return jsonify({"error": str(e)}), 409  
     except Exception as e:
         return jsonify({"error": f"Database processing fault: {str(e)}"}), 500
 
@@ -43,15 +42,13 @@ def register():
 def login():
     data = request.json or {}
     username, password = data.get("username"), data.get("password")
-    
-    # Invokes your native db.verify_user cryptographic check
-    user = manager.db.verify_user(username, password)
-    if not user:
-        return jsonify({"error": "Invalid cryptographic handshake credentials."}), 401
-        
-    token = manager.generate_token(user)
-    return jsonify({"token": token, "username": username, "role": user["role"]}), 200
+    user = manager.db.get_user_by_username(username)
 
+    if not user or user["password"] != password:
+        return jsonify({"error": "Username o password non corretti."}), 401
+
+    token = manager.generate_token(username)
+    return jsonify({"token": token, "username": username, "role": user["role"]}), 200
 
 @app.route("/files/upload-plan", methods=["POST"])
 def upload_plan():
@@ -86,13 +83,11 @@ def list_files():
         if not directory.endswith("/"): directory += "/"
         if not directory.startswith("/"): directory = "/" + directory
 
-        # Invokes your native db.get_user_files list
         raw_files = manager.db.get_user_files(user_ctx["user_id"])
-        
-        # S3-style Virtual hierarchy prefix slicing
+
         seen_dirs = set()
         filtered_files = []
-        
+
         for f in raw_files:
             fname = f["filename"]
             if fname.startswith(directory) and fname != directory:
@@ -117,14 +112,13 @@ def remove_file():
     def _logic(user_ctx):
         filename = request.args.get("filename")
         if not filename.startswith("/"): filename = "/" + filename
-        
+
         file_info = manager.db.get_file_by_name(filename)
         if not file_info: raise FileNotFoundError("Target object missing.")
         if file_info["owner_id"] != user_ctx["user_id"] and user_ctx["role"] != "admin":
             raise PermissionError("Scope violation.")
-            
+
         chunks = manager.db.get_chunks_by_file_id(file_info["id"])
-        # Invokes your native db.delete_file mapping purge
         manager.db.delete_file(file_info["id"])
         return jsonify({"message": "Metadata purged.", "chunks": chunks}), 200
     return _auth_and_route(_logic)
@@ -134,15 +128,15 @@ def remove_file():
 def mkdir():
     def _logic(user_ctx):
         path = request.json.get("path")
-        manager.db.add_file(path, size=0, chunk_count=0, owner_id=user_ctx["user_id"])
-        return jsonify({"message": "Virtual prefix prefix registered."}), 201
+        # Perfectly aligns with db.add_file(filename, size, chunks, owner_id)
+        manager.db.add_file(path, 0, 0, user_ctx["user_id"])
+        return jsonify({"message": "Virtual prefix registered."}), 201
     return _auth_and_route(_logic)
 
 
 @app.route("/files/quota", methods=["GET"])
 def get_quota():
     def _logic(user_ctx):
-        # Invokes your native db.get_user_quota calculation
         total = manager.db.get_user_quota(user_ctx["user_id"])
         return jsonify({"total_bytes": total}), 200
     return _auth_and_route(_logic)
@@ -170,7 +164,6 @@ def cluster_status():
 def admin_list_users():
     def _logic(user_ctx):
         if user_ctx["role"] != "admin": raise PermissionError("Elevated context required.")
-        # Invokes your native db.get_all_users_with_usage method
         users = manager.db.get_all_users_with_usage()
         return jsonify({"users": users}), 200
     return _auth_and_route(_logic)
@@ -183,24 +176,21 @@ def admin_delete_user():
         data = request.json or {}
         target_username = data.get("target_username")
         admin_password = data.get("admin_password")
-        
-        # Verify active admin credentials using user's cryptographic method
+
         admin_user = manager.db.verify_user(user_ctx["username"], admin_password)
         if not admin_user: raise PermissionError("Administrative re-authentication failed.")
-            
+
         all_users = manager.db.get_all_users_with_usage()
         target_user = next((u for u in all_users if u["username"] == target_username), None)
         if not target_user: raise FileNotFoundError("Target account missing.")
-        
-        # Pull chunk records for distributed physical disk purging before nuking SQL
+
         all_chunks = []
         user_files = manager.db.get_user_files(target_user["id"])
         for f in user_files:
             file_info = manager.db.get_file_by_name(f["filename"])
             if file_info:
                 all_chunks.extend(manager.db.get_chunks_by_file_id(file_info["id"]))
-            
-        # Invokes your native atomic database purge transaction
+
         manager.db.delete_user_and_metadata(target_user["id"])
         return jsonify({"message": f"User '{target_username}' and associated assets permanently erased.", "chunks": all_chunks}), 200
     return _auth_and_route(_logic)
@@ -208,3 +198,4 @@ def admin_delete_user():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
