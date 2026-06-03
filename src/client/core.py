@@ -45,9 +45,18 @@ class AdriaClient:
         plan = self.http.get_upload_plan(filename, file_size, remote_dir)
         if "error" in plan: raise Exception(f"Upload plan rejected by Master: {plan['error']}")
 
+        # 1. Execute the physical TCP pipeline transfer
         uploaded_chunks = self.transfer.upload_file_chunks(local_filepath, plan.get("chunks", []), self.crypto_key)
-        return self.http.complete_upload(plan["file_id"], plan["remote_path"], uploaded_chunks, file_size)
-
+        
+        # 2. Inform the Master that the transaction is complete
+        server_res = self.http.complete_upload(plan["file_id"], plan["remote_path"], uploaded_chunks, file_size)
+        
+        # 3. FIX: Return the structured blueprint expected by the UI engine
+        return {
+            "remote_path": plan["remote_path"],
+            "chunks": uploaded_chunks,
+            "message": server_res.get("message")
+        }
     def download(self, filename, local_destination=None) -> str:
         if not self.auth_token or not self.crypto_key: raise Exception("Authentication and encryption key required.")
         local_destination = local_destination or os.path.join(os.getcwd(), os.path.basename(filename))
