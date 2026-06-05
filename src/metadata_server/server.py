@@ -93,15 +93,15 @@ def remove_file():
         filename = request.args.get("filename")
         if not filename.startswith("/"): filename = "/" + filename
         file_info = manager.db.get_file_by_name(filename)
-        if not file_info: raise FileNotFoundError("File not found.")
-        if file_info["owner_id"] != user_ctx["user_id"] and user_ctx["role"] != "admin": 
-            raise PermissionError("Forbidden.")
+        
+        # Security mitigation: mask unauthorized file deletion attempts as non-existent files
+        if not file_info or (file_info["owner_id"] != user_ctx["user_id"] and user_ctx["role"] != "admin"): 
+            raise FileNotFoundError("File not found.")
             
         deletion_targets = manager.get_file_deletion_plan(file_info["id"])
         manager.db.delete_file(file_info["id"])
         return jsonify({"message": "Metadata and targets resolved.", "chunks": deletion_targets}), 200
     return _auth_and_route(_logic)
-
 
 @app.route("/files/mkdir", methods=["POST"])
 def mkdir():

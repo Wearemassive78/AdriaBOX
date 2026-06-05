@@ -77,9 +77,10 @@ class AdriaMetadataManager:
     def build_download_plan(self, user_ctx: dict, filename: str) -> dict:
         if not filename.startswith("/"): filename = "/" + filename
         file_info = self.db.get_file_by_name(filename)
-        if not file_info: raise FileNotFoundError("File not found.")
-        if file_info["owner_id"] != user_ctx["user_id"] and user_ctx["role"] != "admin":
-            raise PermissionError("Access violation.")
+        
+        # Security mitigation: merge non-existence and unauthorized access into a single 404 pipeline
+        if not file_info or (file_info["owner_id"] != user_ctx["user_id"] and user_ctx["role"] != "admin"):
+            raise FileNotFoundError("File not found.")
 
         plan_chunks, node_count = [], len(self.storage_nodes)
         for c in self.db.get_chunks_by_file_id(file_info["id"]):
