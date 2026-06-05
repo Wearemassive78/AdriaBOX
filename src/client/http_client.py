@@ -63,9 +63,9 @@ class AdriaHTTPClient:
         r = self.session.post(f"{self.metadata_url}/files/mkdir", json={"path": directory_path}, timeout=self.request_timeout)
         return self._unwrap_response(r)
 
-    def rmdir_metadata(self, directory_path: str) -> requests.Response:
+    def rmdir_metadata(self, directory_path: str) -> dict:
         r = self.session.delete(f"{self.metadata_url}/files/rmdir", params={"path": directory_path}, timeout=self.request_timeout)
-        return self._unwrap_response(r, return_json=False)
+        return self._unwrap_response(r)
 
     def mv_metadata(self, source: str, destination: str) -> requests.Response:
         r = self.session.post(f"{self.metadata_url}/files/move", json={"source": source, "destination": destination}, timeout=self.request_timeout)
@@ -83,8 +83,7 @@ class AdriaHTTPClient:
         r = self.session.get(f"{self.metadata_url}/admin/users", timeout=self.request_timeout)
         return self._unwrap_response(r, return_json=False)
 
-    def admin_delete_user_metadata(self, target_username, admin_password) -> requests.Response:
+    def admin_delete_user_metadata(self, target_username, admin_password) -> dict:
         payload = {"target_username": target_username, "admin_password": admin_password}
-        r = self.session.delete(f"{self.metadata_url}/admin/userdel", json=payload, timeout=self.request_timeout)
-        return self._unwrap_response(r, return_json=False)
-
+        r = self.session.post(f"{self.metadata_url}/admin/userdel", json=payload, timeout=self.request_timeout)
+        return self._unwrap_response(r)

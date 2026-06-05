@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 
 class DatabaseManager:
@@ -28,7 +29,7 @@ class DatabaseManager:
                 )
             ''')
 
-            # Table for Files (Metadata) - ADDED size COLUMN
+            # Table for Files (Metadata)
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS files (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,7 +42,7 @@ class DatabaseManager:
                 )
             ''')
 
-            # Table for Chunks routing - ADDED size COLUMN
+            # Table for Chunks routing
             cur.execute('''
                 CREATE TABLE IF NOT EXISTS chunks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +75,7 @@ class DatabaseManager:
                 raise ValueError("Username already exists")
 
     def verify_user(self, username, plain_password):
+        """Securely validate user credentials using Werkzeug crypt hashes."""
         with self._get_connection() as conn:
             cur = conn.cursor()
             cur.execute('SELECT id, username, password_hash, role FROM users WHERE username = ?', (username,))
@@ -82,11 +84,17 @@ class DatabaseManager:
                 return {'id': user['id'], 'username': user['username'], 'role': user['role']}
             return None
 
-    def add_file(self, filename, size, chunks, owner_id):
-        """Records basic file metadata including size."""
-        from datetime import datetime
-        created_at = datetime.now().isoformat()
+    def get_user_by_username(self, username):
+        """Fetch basic user details required for token generation and admin controls."""
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute('SELECT id, username, role FROM users WHERE username = ?', (username,))
+            row = cur.fetchone()
+            return dict(row) if row else None
 
+    def add_file(self, filename, size, chunks, owner_id):
+        """Records basic file metadata and returns the generated primary key ID."""
+        created_at = datetime.now().isoformat()
         with self._get_connection() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -96,8 +104,8 @@ class DatabaseManager:
             conn.commit()
             return cur.lastrowid
 
-    def save_chunk_metadata(self, file_id, chunk_index, node_id, chunk_filename, size):
-        """Records specific storage node and chunk size."""
+    def add_chunk(self, file_id, chunk_index, node_id, chunk_filename, size):
+        """Maps a chunk partition to its respective primary storage node target."""
         with self._get_connection() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -120,25 +128,44 @@ class DatabaseManager:
             return [dict(row) for row in cur.fetchall()]
 
     def get_user_files(self, user_id):
-        """
-        Retrieves all files owned by a specific user.
-        Essential for the 'ls' command.
-        """
         with self._get_connection() as conn:
             cur = conn.cursor()
-            # We select the necessary info, ordered by newest first
-            cur.execute('''
-                SELECT filename, size, chunks, created_at 
-                FROM files 
-                WHERE owner_id = ? 
-                ORDER BY id DESC
-            ''', (user_id,))
+            cur.execute('SELECT id, filename, size, chunks, created_at FROM files WHERE owner_id = ? ORDER BY id DESC', (user_id,))
             return [dict(row) for row in cur.fetchall()]
 
+    def list_files_in_dir(self, directory, user_id, role):
+        """List files filtering by tenant visibility or admin scope."""
+        with self._get_connection() as conn:
+            cur = conn.cursor()
+            if role == "admin":
+                cur.execute('SELECT filename, size, chunks FROM files')
+            else:
+                cur.execute('SELECT filename, size, chunks FROM files WHERE owner_id = ?', (user_id,))
+            
+            all_files = [dict(row) for row in cur.fetchall()]
+            
+            # Simple directory virtualization matching your original logic
+            results = []
+            seen = set()
+            prefix = directory.rstrip("/") + "/"
+            if prefix == "/": prefix = "/"
+
+            for f in all_files:
+                path = f["filename"]
+                if directory == "/" or path.startswith(prefix):
+                    rel_path = path if directory == "/" else path[len(prefix):]
+                    parts = rel_path.strip("/").split("/")
+                    if parts and parts[0]:
+                        name = parts[0]
+                        if name in seen: continue
+                        seen.add(name)
+                        if len(parts) > 1:
+                            results.append({"filename": name, "is_dir": True, "size": 0, "chunks": 0})
+                        else:
+                            results.append({"filename": name, "is_dir": False, "size": f["size"], "chunks": f["chunks"]})
+            return results
+
     def delete_file(self, file_id):
-        """
-        Removes a file and all its chunk mappings from the database.
-        """
         with self._get_connection() as conn:
             cur = conn.cursor()
             cur.execute('DELETE FROM chunks WHERE file_id = ?', (file_id,))
@@ -146,37 +173,13 @@ class DatabaseManager:
             conn.commit()
 
     def get_user_quota(self, owner_id):
-        """
-        Calculates the total storage footprint for a specific user.
-        Returns the total sum of bytes across all owned files.
-        """
         with self._get_connection() as conn:
             cur = conn.cursor()
-            cur.execute(
-                'SELECT SUM(size) as total_size FROM files WHERE owner_id = ?', 
-                (owner_id,)
-            )
+            cur.execute('SELECT SUM(size) as total_size FROM files WHERE owner_id = ?', (owner_id,))
             result = cur.fetchone()
             return result['total_size'] or 0
 
-    def rename_file(self, file_id, new_filename):
-        """
-        Updates the absolute path/filename of an existing file.
-        Used for moving and renaming operations (S3-style).
-        """
-        with self._get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                'UPDATE files SET filename = ? WHERE id = ?', 
-                (new_filename, file_id)
-            )
-            conn.commit()
-
     def get_all_users_with_usage(self):
-        """
-        Admin query: retrieves a list of all registered users
-        alongside their combined storage footprint.
-        """
         with self._get_connection() as conn:
             cur = conn.cursor()
             cur.execute('''
@@ -190,23 +193,10 @@ class DatabaseManager:
             return [dict(row) for row in cur.fetchall()]
 
     def delete_user_and_metadata(self, target_user_id):
-        """
-        Admin Operation: Deletes a user, their files, and all associated
-        chunk metadata from the database in a single atomic transaction.
-        """
         with self._get_connection() as conn:
             cur = conn.cursor()
-            # 1. Delete all chunk metadata belonging to the user's files
-            cur.execute('''
-                DELETE FROM chunks WHERE file_id IN (
-                    SELECT id FROM files WHERE owner_id = ?
-                )
-            ''', (target_user_id,))
-            
-            # 2. Delete all files records owned by the user
+            cur.execute('DELETE FROM chunks WHERE file_id IN (SELECT id FROM files WHERE owner_id = ?)', (target_user_id,))
             cur.execute('DELETE FROM files WHERE owner_id = ?', (target_user_id,))
-            
-            # 3. Delete the user account itself
             cur.execute('DELETE FROM users WHERE id = ?', (target_user_id,))
             conn.commit()
 

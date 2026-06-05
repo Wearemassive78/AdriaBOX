@@ -83,17 +83,8 @@ class AdriaClient:
 
     def rmdir(self, directory_path) -> bool:
         if not self.auth_token: raise Exception("Authentication required.")
-        response = self.http.rmdir_metadata(directory_path)
-        
-        try:
-            response.raise_for_status()
-            plan = response.json()
-        except requests.exceptions.HTTPError as e:
-            try: error_msg = response.json().get("error", str(e))
-            except Exception: error_msg = f"Server returned {response.status_code}."
-            raise Exception(f"Failed to remove directory: {error_msg}")
-
-        self.transfer.purge_physical_chunks(plan.get("chunks", []))
+        result = self.http.rmdir_metadata(directory_path)
+        self.transfer.purge_physical_chunks(result.get("chunks", []))
         return True
 
     def mv(self, source, destination) -> dict:
@@ -128,15 +119,6 @@ class AdriaClient:
 
     def admin_delete_user(self, target_username, admin_password) -> dict:
         if not self.auth_token: raise Exception("Authentication required.")
-        response = self.http.admin_delete_user_metadata(target_username, admin_password)
-        try:
-            response.raise_for_status()
-            result = response.json()
-        except requests.exceptions.HTTPError as e:
-            try: error_msg = response.json().get("error", str(e))
-            except Exception: error_msg = f"Server returned {response.status_code}"
-            raise Exception(f"Admin action failed: {error_msg}")
-
+        result = self.http.admin_delete_user_metadata(target_username, admin_password)
         self.transfer.purge_physical_chunks(result.get("chunks", []))
         return result
-

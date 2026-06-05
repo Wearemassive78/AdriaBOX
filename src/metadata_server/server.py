@@ -11,44 +11,46 @@ manager = AdriaMetadataManager(
 )
 
 def _auth_and_route(handler_func, *args, **kwargs):
-    """Standardized handler wrapping for authentication and operational exception unboxing."""
+    """Aspect-oriented helper to handle authorization wrapping and standardized error translation."""
     try:
         user_ctx = manager.authorize_request(request.headers.get("Authorization"))
         return handler_func(user_ctx, *args, **kwargs)
-    except PermissionError as e:
+    except PermissionError as e: 
         return jsonify({"error": str(e)}), 403
-    except FileNotFoundError as e:
+    except FileNotFoundError as e: 
         return jsonify({"error": str(e)}), 404
-    except Exception as e:
-        return jsonify({"error": f"Server fault: {str(e)}"}), 500
+    except Exception as e: 
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/register", methods=["POST"])
 def register():
     data = request.json or {}
     username, password = data.get("username"), data.get("password")
-    if not username or not password:
-        return jsonify({"error": "Credential criteria unsatisfied."}), 400
+    if not username or not password: 
+        return jsonify({"error": "Missing credentials"}), 400
     try:
         manager.db.register_user(username, password)
-        return jsonify({"message": "Identity instantiated successfully."}), 201
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 409  
-    except Exception as e:
-        return jsonify({"error": f"Database processing fault: {str(e)}"}), 500
+        return jsonify({"message": "Registration successful"}), 201
+    except ValueError as e: 
+        return jsonify({"error": str(e)}), 409
+    except Exception as e: 
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/login", methods=["POST"])
 def login():
     data = request.json or {}
     username, password = data.get("username"), data.get("password")
-    user = manager.db.get_user_by_username(username)
-
-    if not user or user["password"] != password:
+    
+    # Authenticate through secure Werkzeug cryptographic hash evaluation
+    user = manager.db.verify_user(username, password)
+    if not user:
         return jsonify({"error": "Username o password non corretti."}), 401
-
+        
     token = manager.generate_token(username)
     return jsonify({"token": token, "username": username, "role": user["role"]}), 200
+
 
 @app.route("/files/upload-plan", methods=["POST"])
 def upload_plan():
@@ -64,7 +66,7 @@ def upload_complete():
     def _logic(user_ctx):
         data = request.json or {}
         manager.commit_file_chunks(int(data.get("file_id")), data.get("chunks", []))
-        return jsonify({"message": "Transaction committed. Replication verified."}), 200
+        return jsonify({"message": "Synchronization complete."}), 200
     return _auth_and_route(_logic)
 
 
@@ -80,30 +82,8 @@ def download_plan():
 def list_files():
     def _logic(user_ctx):
         directory = request.args.get("directory", "/")
-        if not directory.endswith("/"): directory += "/"
-        if not directory.startswith("/"): directory = "/" + directory
-
-        raw_files = manager.db.get_user_files(user_ctx["user_id"])
-
-        seen_dirs = set()
-        filtered_files = []
-
-        for f in raw_files:
-            fname = f["filename"]
-            if fname.startswith(directory) and fname != directory:
-                relative_path = fname[len(directory):]
-                parts = relative_path.split("/")
-                if len(parts) > 1:
-                    dir_name = parts[0]
-                    if dir_name not in seen_dirs:
-                        seen_dirs.add(dir_name)
-                        filtered_files.append({"filename": dir_name, "is_dir": True})
-                else:
-                    filtered_files.append({
-                        "filename": parts[0], "is_dir": False,
-                        "size": f["size"], "chunks": f["chunks"]
-                    })
-        return jsonify({"files": filtered_files}), 200
+        files = manager.db.list_files_in_dir(directory, user_ctx["user_id"], user_ctx["role"])
+        return jsonify({"files": files}), 200
     return _auth_and_route(_logic)
 
 
@@ -112,25 +92,23 @@ def remove_file():
     def _logic(user_ctx):
         filename = request.args.get("filename")
         if not filename.startswith("/"): filename = "/" + filename
-
         file_info = manager.db.get_file_by_name(filename)
-        if not file_info: raise FileNotFoundError("Target object missing.")
-        if file_info["owner_id"] != user_ctx["user_id"] and user_ctx["role"] != "admin":
-            raise PermissionError("Scope violation.")
-
-        chunks = manager.db.get_chunks_by_file_id(file_info["id"])
+        if not file_info: raise FileNotFoundError("File not found.")
+        if file_info["owner_id"] != user_ctx["user_id"] and user_ctx["role"] != "admin": 
+            raise PermissionError("Forbidden.")
+            
+        deletion_targets = manager.get_file_deletion_plan(file_info["id"])
         manager.db.delete_file(file_info["id"])
-        return jsonify({"message": "Metadata purged.", "chunks": chunks}), 200
+        return jsonify({"message": "Metadata and targets resolved.", "chunks": deletion_targets}), 200
     return _auth_and_route(_logic)
 
 
 @app.route("/files/mkdir", methods=["POST"])
 def mkdir():
     def _logic(user_ctx):
-        path = request.json.get("path")
-        # Perfectly aligns with db.add_file(filename, size, chunks, owner_id)
-        manager.db.add_file(path, 0, 0, user_ctx["user_id"])
-        return jsonify({"message": "Virtual prefix registered."}), 201
+        data = request.json or {}
+        manager.db.add_file(data.get("path"), size=0, chunks=0, owner_id=user_ctx["user_id"])
+        return jsonify({"message": "Directory prefix registered successfully."}), 201
     return _auth_and_route(_logic)
 
 
@@ -145,54 +123,41 @@ def get_quota():
 @app.route("/cluster-status", methods=["GET"])
 def cluster_status():
     def _logic(user_ctx):
-        if user_ctx["role"] != "admin": raise PermissionError("Elevated context required.")
-        nodes_report = []
-        for node in manager.storage_nodes:
-            nodes_report.append({
-                "node_id": node["node_id"], "status": "ok", 
-                "host": node["host"], "http_port": 5001, "tcp_port": node["tcp_port"],
-                "storage_dir": f"/app/storage/{node['node_id']}"
-            })
-        return jsonify({
-            "metadata": {"status": "ok", "url": request.url_root},
-            "nodes": nodes_report
-        }), 200
+        if user_ctx["role"] != "admin": raise PermissionError("Admin role required.")
+        nodes_report = [{
+            "node_id": n["node_id"], "status": "ok", "host": n["host"], "http_port": 5001, "tcp_port": n["tcp_port"], "storage_dir": f"/app/storage/{n['node_id']}"
+        } for n in manager.storage_nodes]
+        return jsonify({"metadata": {"status": "ok", "url": request.url_root}, "nodes": nodes_report}), 200
     return _auth_and_route(_logic)
 
 
 @app.route("/admin/users", methods=["GET"])
 def admin_list_users():
     def _logic(user_ctx):
-        if user_ctx["role"] != "admin": raise PermissionError("Elevated context required.")
-        users = manager.db.get_all_users_with_usage()
-        return jsonify({"users": users}), 200
+        if user_ctx["role"] != "admin": raise PermissionError("Admin role required.")
+        return jsonify({"users": manager.db.get_all_users_with_usage()}), 200
     return _auth_and_route(_logic)
 
 
-@app.route("/admin/userdel", methods=["DELETE"])
+@app.route("/admin/userdel", methods=["POST"])
 def admin_delete_user():
     def _logic(user_ctx):
-        if user_ctx["role"] != "admin": raise PermissionError("Elevated context required.")
+        if user_ctx["role"] != "admin": raise PermissionError("Admin role required.")
         data = request.json or {}
-        target_username = data.get("target_username")
-        admin_password = data.get("admin_password")
-
+        target_username, admin_password = data.get("target_username"), data.get("admin_password")
+        
         admin_user = manager.db.verify_user(user_ctx["username"], admin_password)
-        if not admin_user: raise PermissionError("Administrative re-authentication failed.")
-
-        all_users = manager.db.get_all_users_with_usage()
-        target_user = next((u for u in all_users if u["username"] == target_username), None)
-        if not target_user: raise FileNotFoundError("Target account missing.")
-
-        all_chunks = []
-        user_files = manager.db.get_user_files(target_user["id"])
-        for f in user_files:
-            file_info = manager.db.get_file_by_name(f["filename"])
-            if file_info:
-                all_chunks.extend(manager.db.get_chunks_by_file_id(file_info["id"]))
-
+        if not admin_user: raise PermissionError("Administrative authentication failed.")
+            
+        target_user = manager.db.get_user_by_username(target_username)
+        if not target_user: raise FileNotFoundError("Target user missing.")
+        
+        all_deletion_targets = []
+        for f in manager.db.get_user_files(target_user["id"]):
+            all_deletion_targets.extend(manager.get_file_deletion_plan(f["id"]))
+            
         manager.db.delete_user_and_metadata(target_user["id"])
-        return jsonify({"message": f"User '{target_username}' and associated assets permanently erased.", "chunks": all_chunks}), 200
+        return jsonify({"message": f"User '{target_username}' and assets purged.", "chunks": all_deletion_targets}), 200
     return _auth_and_route(_logic)
 
 
