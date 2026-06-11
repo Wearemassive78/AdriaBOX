@@ -2,7 +2,7 @@
 import os
 import math
 import jwt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from metadata_server.db import DatabaseManager
 from common.constants import LOGICAL_BLOCK_SIZE
 
@@ -30,7 +30,7 @@ class AdriaMetadataManager:
         if not user: raise ValueError("User missing.")
         payload = {
             "user_id": user["id"], "username": username, "role": user["role"],
-            "exp": datetime.utcnow() + timedelta(hours=24)
+            "exp": datetime.now(timezone.utc) + timedelta(hours=24)
         }
         return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
@@ -119,4 +119,3 @@ class AdriaMetadataManager:
                     "tcp_port": node["client_tcp_port"]
                 })
         return targets
-
