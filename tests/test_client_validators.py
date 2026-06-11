@@ -1,3 +1,4 @@
+"""Tests for client-side input validation helpers."""
 import pytest
 from unittest.mock import patch
 
