@@ -1,39 +1,30 @@
 import pytest
 from unittest.mock import patch, Mock
-
-# Assumendo che tu abbia salvato la classe AdriaClient nel file src/client/api.py
 from client.api import AdriaClient
 
-# Il decoratore @patch "intercetta" la funzione post della libreria requests.
-# mock_post è il nostro "Server finto" che ci viene passato come parametro.
 @patch('client.core.requests.Session.post')
 def test_client_register_success(mock_post):
     """Tests if the register function sends the correct JSON payload."""
     
     # --- 1. SETUP (Arrange) ---
-    # Prepariamo la nostra finta risposta del server (HTTP 201 Created)
     mock_response = Mock()
     mock_response.status_code = 201
     mock_response.json.return_value = {"id": 1, "username": "mario"}
-    mock_response.raise_for_status.return_value = None  # Nessun errore di rete
-    
-    # Diciamo al nostro finto server di restituire questa risposta
+    mock_response.raise_for_status.return_value = None  
     mock_post.return_value = mock_response
 
     # --- 2. EXECUTE (Act) ---
-    # Istanziamo il nostro client con un URL inventato
     client = AdriaClient("http://fake-server:5000")
     result = client.register("mario", "password123")
 
     # --- 3. VERIFY (Assert) ---
-    # Verifichiamo che il client ci restituisca il dizionario atteso
     assert result["username"] == "mario"
     
-    # La parte più importante: verifichiamo che il client abbia provato
-    # a inviare i dati giusti, all'URL giusto, formattati come JSON!
+    # CORREZIONE: Rimosso 'role': 'user' dal payload atteso poiché la scalata dei privilegi
+    # è mitigata lasciando al server l'assegnazione autoritativa del ruolo.
     mock_post.assert_called_once_with(
         "http://fake-server:5000/register",
-        json={"username": "mario", "password": "password123", "role": "user"},
+        json={"username": "mario", "password": "password123"},
         timeout=10.0,
     )
 
@@ -57,9 +48,9 @@ def test_client_login_success(mock_post):
     client.login("mario", "password123")
 
     # --- 3. VERIFY ---
-    # Verifichiamo che il token sia stato salvato nella nostra "struct"
     assert client.auth_token == "my-secret-jwt-token"
     assert client.current_username == "mario"
-    assert client.current_role == "user"
-    # Verifichiamo che la sessione sia pronta a mandare il token nelle chiamate future!
-    assert client.session.headers["Authorization"] == "Bearer my-secret-jwt-token"
+    # CORREZIONE: Rimossa l'asserzione obsoleta su current_role che non fa parte 
+    # degli attributi esposti dall'istanza della classe Facade.
+    assert client.http.session.headers["Authorization"] == "Bearer my-secret-jwt-token"
+
