@@ -1,3 +1,4 @@
+#da controllare con MAX
 import pytest
 from unittest.mock import patch, Mock
 from client.api import AdriaClient
