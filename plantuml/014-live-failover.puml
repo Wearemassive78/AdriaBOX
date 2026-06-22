@@ -1,0 +1,47 @@
+@startuml 014-live-failover
+skinparam handwritten false
+skinparam monochrome true
+skinparam defaultFontName "Arial"
+
+title High Availability Cluster Validation - Hardware Failure Recovery Sequence
+
+box "Tenant User Endpoint" #White
+participant "AdriaBOX CLI\n(cli.py)" as CLI
+participant "Transfer Manager\n(transfer.py)" as TM
+end box
+
+box "Decentralized Cluster Network Plane" #White
+participant "Storage Node 1\n(Port 7001 - DEAD)" as N1
+participant "Storage Node 2\n(Port 7002 - ALIVE)" as N2
+end box
+
+== Structural Fault Injection (Simulated Blackout) ==
+note over N1 #Pink: Injected out-of-band kernel crash:\nsudo kill -9 $(lsof -t -i:7001)
+
+== Transaction Initiation ==
+CLI -> TM: download_file_chunks(plan, crypto_key)
+activate TM
+note over TM: Chunk 0 resolution target list:\n[Node 1:7001, Node 2:7002, Node 3:7003]
+
+TM -> N1: socket.connect((host, 7001))
+activate N1
+N1 --X TM: raise ConnectionRefusedError / OSError (Port Unreachable)
+deactivate N1
+
+TM -> TM: catch Exception within retry loop
+TM -> CLI: forward dynamic status telemetry
+CLI -> User: print [Warning] Node 1 unreachable. Shifting to replica mirror...
+
+TM -> N2: socket.connect((host, 7002))
+activate N2
+N2 --> TM: TCP Handshake Established (SYN-ACK)
+loop Until 64MB Logical Block Completion
+    N2 -> TM: stream binary block ciphertext fragments
+    TM -> TM: execute on-the-fly AES decryption and write to disk
+end
+TM <-- N2: close connection envelope
+deactivate N2
+
+CLI <-- TM: return verified file layout path
+deactivate TM
+@enduml

@@ -1,0 +1,34 @@
+@startuml 013-memory-starvation
+skinparam handwritten false
+skinparam monochrome true
+skinparam defaultFontName "Arial"
+
+title Memory Footprint Mapping - O(1) Bounded Architecture vs O(N) Starvation
+
+box "Linux System Host Layout" #White
+participant "Physical Disk\n(512MB Asset)" as Disk
+participant "Operating System\nKernel Page Cache" as Kernel
+participant "Python Process RAM\nStaging Buffer" as RAM
+participant "Network Socket\nInterface Card" as NIC
+end box
+
+note over RAM #LightGray
+  Invariant Resource Framework Allocation Boundary (Max ~77MB Peak)
+  Contains: Python Interpreter runtime + compiled core libraries
+end note
+
+loop Over 131,072 Iterations [512MB File / 4KB Transfer Page]
+    Disk -> Kernel: pull memory page via DMA
+    Kernel -> RAM: copy bounded 4096-Byte window (CHUNK_SIZE)
+    activate RAM
+    note over RAM: Inline Processing Layer:\n1. Apply AES-256-CTR encryption\n2. Update cumulative SHA-256 state
+    RAM -> Kernel: transmit encrypted ciphertext window via sendall()
+    deactivate RAM
+    Kernel -> NIC: flash data block to physical network medium
+end
+
+note over RAM #LightGreen
+  Result: Memory Footprint remains flat at O(1) throughout execution.
+  Immune to data volume capacity scaling.
+end note
+@enduml

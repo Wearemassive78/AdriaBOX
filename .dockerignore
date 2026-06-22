@@ -1,0 +1,9 @@
+512MB.zip
+data/
+report/
+.git/
+.venv/
+__pycache__/
+*.chunk
+*.zip
+*.avi

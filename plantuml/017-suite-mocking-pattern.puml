@@ -1,0 +1,34 @@
+@startuml 017-suite-mocking-pattern
+skinparam handwritten false
+skinparam monochrome true
+skinparam defaultFontName "Arial"
+skinparam shadownding false
+
+title Automated Validation Layer - Mocking and Interception Pattern
+
+box "Pytest Engine Framework" #White
+participant "Test Case Runner\n(test_client_http.py)" as Test
+participant "MagicMock Context\n(requests.Session.post)" as Mock
+end box
+
+box "Isolated Source Code Modules" #White
+participant "AdriaHTTPClient\n(http_client.py)" as HTTP
+end box
+
+Test -> Mock: Interpose patch decorator & inject fake JSON response\n(status_code=404, json={"error": "File not found."})
+Test -> HTTP: invoke get_download_plan("/missing.txt")
+activate HTTP
+
+HTTP -> Mock: execution call post()
+note over Mock: Interception interceptor triggers.\nZero traffic reaches the internet or Flask wire.
+Mock --> HTTP: deliver return_value (Mocked 404 response payload)
+
+HTTP -> HTTP: evaluate response.ok -> Hit False state
+HTTP -> HTTP: parse custom JSON message -> raise BackendServerError
+Test <-- HTTP: raise BackendServerError Exception
+deactivate HTTP
+
+Test -> Test: assert pytest.raises(BackendServerError) matched successfully
+note over Test #LightGreen: Test Checkpoint PASSED\nExecution Time: ~0.002s
+@enduml
+

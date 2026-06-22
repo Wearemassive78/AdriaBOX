@@ -1,0 +1,28 @@
+@startuml 008-data-plane-streaming
+skinparam handwritten false
+skinparam monochrome true
+skinparam defaultFontName "Arial"
+skinparam shadownding false
+
+title User-Space Buffered Streaming, Online Encryption, and Hashing Pipeline Engine
+
+participant "Physical SSD Disk" as Disk
+participant "Linux Kernel Space" as Kernel
+participant "User-Space Staging Buffer\n(CHUNK_SIZE = 4096 Bytes)" as RAM
+participant "Crypto Engine\n(AES-256-CTR)" as Crypt
+participant "Streaming Hasher\n(SHA-256)" as Hash
+participant "Network Socket\n(TCP Pipe)" as Socket
+
+loop Until EOF (End of 64MB Logical Block)
+    Disk -> Kernel : Read low-level block
+    Kernel -> RAM : Copy 4096 Bytes to application space
+    activate RAM
+    RAM -> Crypt : Pass raw buffer fragment
+    Crypt -> Crypt : Encrypt in-place (Ciphertext)
+    RAM -> Hash : Pass ciphertext fragment
+    Hash -> Hash : update() running hash state
+    RAM -> Kernel : socket.sendall() buffer
+    deactivate RAM
+    Kernel -> Socket : Flush packet to network medium
+end
+@enduml

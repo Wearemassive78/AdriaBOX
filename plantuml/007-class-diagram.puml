@@ -1,0 +1,53 @@
+@startuml 007-class-diagram
+skinparam handwritten false
+skinparam monochrome true
+skinparam packageStyle rect
+skinparam defaultFontName "Arial"
+skinparam shadownding false
+
+title AdriaBOX - Static Object-Oriented Class Infrastructure
+
+package "Client Subsystems" #White {
+    class AdriaClient {
+        +auth_token : str
+        +current_username : str
+        +crypto_key : str
+        +register()
+        +login()
+        +upload()
+        +download()
+    }
+    class AdriaHTTPClient {
+        +session : requests.Session
+        +get_upload_plan()
+        +get_download_plan()
+    }
+    class AdriaTransferManager {
+        +upload_file_chunks()
+        +download_file_chunks()
+    }
+    class CryptoManager {
+        +derive_key()
+        +get_stream_cipher()
+    }
+}
+
+package "Server Metadata Subsystems" #White {
+    class AdriaMetadataManager {
+        +db : DatabaseManager
+        +storage_nodes : list
+        +build_upload_plan()
+        +build_download_plan()
+    }
+    class DatabaseManager {
+        +add_file()
+        +add_chunk()
+        +get_file_by_name()
+    }
+}
+
+AdriaClient *-- AdriaHTTPClient
+AdriaClient *-- AdriaTransferManager
+AdriaTransferManager ..> CryptoManager
+AdriaMetadataManager *-- DatabaseManager
+@enduml

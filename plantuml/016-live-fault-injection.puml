@@ -1,0 +1,48 @@
+@startuml 016-live-fault-injection
+skinparam handwritten false
+skinparam monochrome true
+skinparam defaultFontName "Arial"
+skinparam shadownding false
+
+title Verification Horizon - Live Cluster Fault Injection and Failover Evaluation
+
+box "Host Execution Space" #White
+actor "SysAdmin / Professor" as User
+participant "Client CLI\n(poetry run adria)" as CLI
+participant "Transfer Subsystem\n(transfer.py)" as TM
+end box
+
+box "Containerized Network Isolation Plane" #White
+participant "Storage Node 1\n(Port 7001 - KILLED)" as N1
+participant "Storage Node 2\n(Port 7002 - ACTIVE)" as N2
+end box
+
+User -> N1: Out-of-band execution: sudo kill -9 $(lsof -t -i:7001)
+note over N1 #Pink: Failure Domain 1 Down\nPort 7001 Vacant
+
+User -> CLI: adria download /file_example.avi
+activate CLI
+CLI -> TM: download_file_chunks(plan_chunks)
+activate TM
+
+TM -> N1: open raw socket connection (127.0.0.1:7001)
+activate N1
+N1 --X TM: raise ConnectionRefusedError / OSError
+deactivate N1
+
+note over TM #LightYellow: Catch network exception\nSuppress primitive traceback
+TM -> CLI: emit failover telemetry alert
+CLI -> User: print [Warning] Node storage1 unreachable... Trying replica...
+
+TM -> N2: open alternate socket connection (127.0.0.1:7002)
+activate N2
+N2 --> TM: TCP Handshake Established (SYN-ACK)
+TM <- N2: Ingest encrypted octet fragments via 4KB streaming page
+TM -> TM: Execute online CTR decryption & flush bytes to local disk
+deactivate N2
+
+CLI <-- TM: return verified file target path
+User <-- CLI: print Successfully downloaded to: download_recuperato.avi
+deactivate TM
+deactivate CLI
+@endif

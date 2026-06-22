@@ -1,0 +1,29 @@
+@startuml 005-upload-pipeline
+skinparam handwritten false
+skinparam monochrome true
+skinparam defaultFontName "Arial"
+skinparam shadownding false
+
+title Synchronous Pipeline Replication Sequence Matrix
+
+participant "Client CLI" as Client
+participant "Storage Node 1\n(Primary)" as N1
+participant "Storage Node 2\n(Replica 2)" as N2
+participant "Storage Node 3\n(Replica 3)" as N3
+
+Client -> N1 : Connect & stream 4KB data buffer
+activate N1
+N1 -> N1 : Write local disk buffer
+N1 -> N2 : Forward active streaming buffer
+activate N2
+N2 -> N2 : Write local disk buffer
+N2 -> N3 : Forward active streaming buffer
+activate N3
+N3 -> N3 : Commit bytes to persistent SSD
+N3 --> N2 : return ACK_OK
+deactivate N3
+N2 --> N1 : return ACK_OK
+deactivate N2
+N1 --> Client : return combined pipeline ACK_OK
+deactivate N1
+@enduml

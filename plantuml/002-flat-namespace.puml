@@ -1,0 +1,39 @@
+@startuml 002-flat-namespace
+skinparam handwritten false
+skinparam monochrome true
+skinparam defaultFontName "Arial"
+skinparam shadownding false
+
+title Object Storage Flat Namespace vs Physical Layout Mapping
+
+package "Logical Layer: User Virtual Perspective" #White {
+    note as VirtualTree
+        Virtual Tree Presentation (adria ls)
+        ├── documents/
+        │   └── pizzeria/
+        │       └── file_example.avi
+    end note
+}
+
+package "Metadata Core Plane (Authoritative Source of Truth)" #White {
+    map "files Table Record" as DB_File {
+        id => 42
+        filename => /documents/pizzeria/file_example.avi
+        size => 2279794 Bytes
+        chunks => 1
+    }
+}
+
+package "Physical Layer: Storage Node Disk Topologies" #White {
+    folder "/app/storage/storage1/" as Phys1 {
+        file "42_0_file_example.avi.chunk" as C1
+    }
+    folder "/app/storage/storage2/" as Phys2 {
+        file "42_0_file_example.avi.chunk" as C2
+    }
+}
+
+VirtualTree .down.> DB_File : "Abstracted String Matching"
+DB_File -down-> C1 : "Metadata Index Mapping"
+DB_File -down-> C2 : "Replication Target Mapping"
+@enduml

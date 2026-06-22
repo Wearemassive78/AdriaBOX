@@ -1,0 +1,38 @@
+@startuml 018-container-topology
+skinparam handwritten false
+skinparam monochrome true
+skinparam packageStyle rect
+skinparam defaultFontName "Arial"
+skinparam shadownding false
+
+title AdriaBOX - Isolated Container Networking and Deployment Topology
+
+node "Host Operating System (Ubuntu Linux Platform VM)" #White {
+    
+    interface "Physical Host Network Interface" as NIC
+    
+    package "Isolated Docker Bridge Network Matrix (adriabox-net / 172.18.0.0/16)" #LightGray {
+        
+        component "[adriabox-metadata-1]\nFlask Master Server\nIP: 172.18.0.11\nPort: 5000" as Master
+        
+        package "Decentralized Data Plane Fleet" #White {
+            component "[adriabox-storage-1]\nPort TCP: 7001" as S1
+            component "[adriabox-storage-2]\nPort TCP: 7002" as S2
+            component "[adriabox-storage-12]\nPort TCP: 7012" as S12
+        }
+    }
+    
+    package "User-Space Local Workspace" #White {
+        component "[Poetry Virtual Env]\nClient CLI Engine\n(adria core tool)" as Client
+    }
+}
+
+NIC -down-> Master : "Exposed Port 5000\n(Control Ingress)"
+Client -up-> Master : "HTTP REST API Calls\n(JWT Authenticated)"
+Client -up-> S1 : "Raw TCP Stream (Port 7001)"
+Client -up-> S2 : "Raw TCP Stream (Port 7002)"
+Client -up-> S12 : "Raw TCP Stream (Port 7012)"
+
+S1 -right-> S2 : "<<pipeline synchronization>>"
+S2 .right.> S12 : "<<pipeline synchronization>>"
+@enduml

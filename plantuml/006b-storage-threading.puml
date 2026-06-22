@@ -1,0 +1,47 @@
+@startuml 006b-storage-threading
+skinparam handwritten false
+skinparam monochrome true
+skinparam defaultFontName "Arial"
+skinparam shadownding false
+
+title Storage Node Internal Runtime - Concurrent Thread Isolation Model
+
+box "Storage Daemon Main Process" #White
+participant "Main TCP Socket Listener\n(node.py)" as Main
+participant "ThreadPoolExecutor\n(Core Driver)" as Pool
+end box
+
+box "Isolated Worker Thread Contexts" #White
+participant "Thread Worker 1\n(Tenant Max Session)" as T1
+participant "Thread Worker 2\n(Tenant Sam Session)" as T2
+end box
+
+[-> Main: Socket Connection Handshake (Client Max)
+activate Main
+Main -> Pool: Submit execution task with socket descriptor
+activate Pool
+create T1
+Pool -> T1: spawn thread context (O(1) Memory Staging Buffer)
+deactivate Main
+activate T1
+
+[-> Main: Socket Connection Handshake (Client Sam)
+activate Main
+Main -> Pool: Submit execution task with socket descriptor
+create T2
+Pool -> T2: spawn thread context (O(1) Memory Staging Buffer)
+deactivate Main
+activate T2
+
+note over T1: Direct I/O isolation\nReads 4KB framed packets\nWrites to /app/storage/storageX/max_file
+note over T2: Direct I/O isolation\nReads 4KB framed packets\nWrites to /app/storage/storageX/sam_file
+
+T1 -> T1: finalize chunk persistence
+[<-- T1: dispatch combined ACK_OK status frame
+destroy T1
+
+T2 -> T2: finalize chunk persistence
+[<-- T2: dispatch combined ACK_OK status frame
+destroy T2
+deactivate Pool
+@enduml
