@@ -7,7 +7,7 @@ from client.http_client import AdriaHTTPClient
 from client.transfer import AdriaTransferManager
 
 class AdriaClient:
-    def __init__(self, metadata_url="http://localhost:5000", request_timeout=10.0):
+    def __init__(self, metadata_url="http://metadata:5000", request_timeout=10.0):
         self.session_manager = SessionManager()
         self.http = AdriaHTTPClient(metadata_url, request_timeout)
         self.transfer = AdriaTransferManager(request_timeout)
@@ -42,21 +42,46 @@ class AdriaClient:
         if not self.auth_token or not self.crypto_key: raise Exception("Authentication and encryption key required.")
         file_size, filename = os.path.getsize(local_filepath), os.path.basename(local_filepath)
 
+        full_path = os.path.join(remote_dir, filename).replace("\\", "/")
+        if not full_path.startswith("/"): full_path = "/" + full_path
+
+        # 1. Check if the file already exists for this user in the metadata catalog
+        try:
+            existing_files = self.list_files(remote_dir)
+            file_exists = any(f["filename"] == filename and not f["is_dir"] for f in existing_files)
+
+            if file_exists:
+                print(f"\n[Warning] The file '{filename}' already exists in {remote_dir}.")
+                choice = input("Do you want to overwrite it? (y/n): ").strip().lower()
+                if choice != 'y':
+                    print("Upload operation aborted by the user.")
+                    return {"message": "Upload aborted."}
+
+                # If user wants to overwrite, we first delete the old metadata and chunks to prevent ghost blocks
+                print("Purging old file replicas from the cluster...")
+                self.rm(full_path)
+        except Exception as e:
+            # If directory doesn't exist yet or list fails, we proceed normally
+            pass
+
+        # 2. Get the upload plan from Master
         plan = self.http.get_upload_plan(filename, file_size, remote_dir)
         if "error" in plan: raise Exception(f"Upload plan rejected by Master: {plan['error']}")
 
-        # 1. Execute the physical TCP pipeline transfer
-        uploaded_chunks = self.transfer.upload_file_chunks(local_filepath, plan.get("chunks", []), self.crypto_key)
-        
-        # 2. Inform the Master that the transaction is complete
+        session_id = str(plan["file_id"])
+
+        # 3. Execute the physical TCP pipeline transfer
+        uploaded_chunks = self.transfer.upload_file_chunks(local_filepath, plan.get("chunks", []), self.crypto_key, session_id)
+
+        # 4. Inform the Master that the transaction is complete
         server_res = self.http.complete_upload(plan["file_id"], plan["remote_path"], uploaded_chunks, file_size)
-        
-        # 3. FIX: Return the structured blueprint expected by the UI engine
+
         return {
             "remote_path": plan["remote_path"],
             "chunks": uploaded_chunks,
             "message": server_res.get("message")
         }
+
     def download(self, filename, local_destination=None) -> str:
         if not self.auth_token or not self.crypto_key: raise Exception("Authentication and encryption key required.")
         local_destination = local_destination or os.path.join(os.getcwd(), os.path.basename(filename))

@@ -28,17 +28,22 @@ class ChunkStreamSender(AdriaTCPStreamer):
         self.timeout = timeout
         self.crypto_key = crypto_key
 
-    def send_with_pipeline(self, file_stream, chunk_filename: str, chunk_size: int, pipeline: list) -> bool:
+    def send_with_pipeline(self, file_stream, chunk_filename: str, chunk_size: int, pipeline: list, session_id: str) -> bool:
         """Inject the serialization meta-header and stream raw bytes down the synchronous replication cascade."""
-        metadata = {"chunk_filename": chunk_filename, "pipeline": pipeline}
+        # Injecting the unique session_id to isolate multi-tenant operations
+        metadata = {
+            "session_id": session_id,
+            "chunk_filename": chunk_filename, 
+            "pipeline": pipeline
+        }
         metadata_bytes = json.dumps(metadata).encode('utf-8')
-        
+
         # Protocol payload: 'U' (Upload command) + Meta Len (4B) + Data Size (4B) + Meta JSON + Stream
         header = b'U' + struct.pack('>II', len(metadata_bytes), chunk_size) + metadata_bytes
 
         with socket.create_connection((self.host, self.port), timeout=self.timeout) as s:
             s.sendall(header)
-            
+
             bytes_sent = 0
             while bytes_sent < chunk_size:
                 buffer = file_stream.read(min(4096, chunk_size - bytes_sent))
@@ -46,11 +51,10 @@ class ChunkStreamSender(AdriaTCPStreamer):
                     break
                 s.sendall(buffer)
                 bytes_sent += len(buffer)
-                
+
             # Block and await cascading ACK bubble-up verification
             ack = self._recv_exact(s, len(self.ACK_OK))
             return ack == self.ACK_OK
-
 
 class ChunkDownloader(AdriaTCPStreamer):
     """Client-side receiver component targeting a specific replica node to download content blocks."""
@@ -117,18 +121,24 @@ class FileReceiver(AdriaTCPStreamer):
             except OSError: pass
 
     def handle_pipeline_upload(self):
-        """Tee-streaming pipeline engine writing locally while concurrently pushing blocks down the cluster network."""
+        """Tee-streaming pipeline engine writing locally to temporary staging paths before committing on successful ACK cascades."""
         lengths = self._recv_exact(self.conn, 8)
         if not lengths: return
         meta_len, chunk_size = struct.unpack('>II', lengths)
 
         meta_bytes = self._recv_exact(self.conn, meta_len)
         metadata = json.loads(meta_bytes.decode('utf-8'))
-        
+
+        # Extraction of the core transactional variables
+        session_id = metadata["session_id"]
         chunk_filename = metadata["chunk_filename"]
         pipeline = metadata["pipeline"]
 
+        # Isolate the data stream inside a dedicated, session-bound temporary staging file
+        temp_filename = f"{chunk_filename}.{session_id}.tmp"
         file_path = os.path.join(self.storage_dir, chunk_filename)
+        temp_file_path = os.path.join(self.storage_dir, temp_filename)
+
         next_node_socket = None
         pipeline_failed = False
 
@@ -137,11 +147,16 @@ class FileReceiver(AdriaTCPStreamer):
             try:
                 next_node = pipeline[0]
                 remaining_pipeline = pipeline[1:]
-                
-                next_metadata = {"chunk_filename": chunk_filename, "pipeline": remaining_pipeline}
+
+                # Forwarding the session_id downstream to preserve the multi-tenant logical channel
+                next_metadata = {
+                    "session_id": session_id,
+                    "chunk_filename": chunk_filename,
+                    "pipeline": remaining_pipeline
+                }
                 next_meta_bytes = json.dumps(next_metadata).encode('utf-8')
                 next_header = b'U' + struct.pack('>II', len(next_meta_bytes), chunk_size) + next_meta_bytes
-                
+
                 next_node_socket = socket.create_connection((next_node["host"], int(next_node["tcp_port"])), timeout=10.0)
                 next_node_socket.sendall(next_header)
             except Exception as e:
@@ -149,38 +164,53 @@ class FileReceiver(AdriaTCPStreamer):
                 pipeline_failed = True
 
         bytes_received = 0
-        with open(file_path, "wb") as f:
+        # Writing directly to the isolated staging location
+        with open(temp_file_path, "wb") as f:
             while bytes_received < chunk_size:
                 buffer = self.conn.recv(min(4096, chunk_size - bytes_received))
                 if not buffer: break
-                
-                f.write(buffer) # Local write
+
+                f.write(buffer) # Local write to temporary layout
                 if next_node_socket and not pipeline_failed:
                     try: next_node_socket.sendall(buffer) # Inline pipeline pass
                     except OSError: pipeline_failed = True
-                        
+
                 bytes_received += len(buffer)
 
-        # Coordinate cascading verification
+        # Coordinate cascading verification and atomic commit mechanics
         if next_node_socket and not pipeline_failed:
             try:
                 ack = next_node_socket.recv(len(self.ACK_OK))
                 next_node_socket.close()
-                self.conn.sendall(self.ACK_OK if ack == self.ACK_OK else self.ACK_ERROR)
+
+                if ack == self.ACK_OK:
+                    # Atomic commit: promote the temporary file to final block layout only on absolute success
+                    os.replace(temp_file_path, file_path)
+                    self.conn.sendall(self.ACK_OK)
+                else:
+                    if os.path.exists(temp_file_path): os.remove(temp_file_path)
+                    self.conn.sendall(self.ACK_ERROR)
             except Exception:
+                if os.path.exists(temp_file_path): os.remove(temp_file_path)
                 self.conn.sendall(self.ACK_ERROR)
         else:
-            self.conn.sendall(self.ACK_ERROR if pipeline_failed else self.ACK_OK)
+            if pipeline_failed:
+                if os.path.exists(temp_file_path): os.remove(temp_file_path)
+                self.conn.sendall(self.ACK_ERROR)
+            else:
+                # End of the chain: promote the local chunk and signal upstream nodes
+                os.replace(temp_file_path, file_path)
+                self.conn.sendall(self.ACK_OK)
 
     def handle_download(self):
         """Locate raw block assets on disk and push data streams backward up the socket link."""
         len_bytes = self._recv_exact(self.conn, 4)
         if not len_bytes: return
         filename_len = struct.unpack('>I', len_bytes)[0]
-        
+
         chunk_filename = self._recv_exact(self.conn, filename_len).decode('utf-8')
         file_path = os.path.join(self.storage_dir, chunk_filename)
-        
+
         if not os.path.exists(file_path):
             self.conn.sendall(self.ACK_ERROR)
             return
@@ -196,10 +226,10 @@ class FileReceiver(AdriaTCPStreamer):
         len_bytes = self._recv_exact(self.conn, 4)
         if not len_bytes: return
         filename_len = struct.unpack('>I', len_bytes)[0]
-        
+
         chunk_filename = self._recv_exact(self.conn, filename_len).decode('utf-8')
         file_path = os.path.join(self.storage_dir, chunk_filename)
-        
+
         if os.path.exists(file_path):
             os.remove(file_path)
 

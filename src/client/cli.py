@@ -42,7 +42,7 @@ class AdriaCLI:
         self._add_cmd("userdel", "adria userdel <username>\nDeletes a user and their files (Admin).", ["username"])
 
         config = load_client_config()
-        self.client = AdriaClient(metadata_url=config.metadata_url, request_timeout=config.request_timeout)
+        self.client = AdriaClient(metadata_url="http://metadata:5000", request_timeout=config.request_timeout)
 
     def _add_cmd(self, name, help_text, args_list=None):
         parser = self.subparsers.add_parser(name, help=help_text)

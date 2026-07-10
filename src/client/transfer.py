@@ -6,8 +6,8 @@ class AdriaTransferManager:
     def __init__(self, request_timeout: float):
         self.timeout = request_timeout
 
-    def upload_file_chunks(self, local_filepath: str, plan_chunks: list, crypto_key: str) -> list:
-        """Slice the local file and push chunks into their designated replication pipelines."""
+    def upload_file_chunks(self, local_filepath: str, plan_chunks: list, crypto_key: str, session_id: str) -> list:
+        """Slice the local file and push chunks into their designated replication pipelines with session isolation."""
         uploaded_chunks = []
         with open(local_filepath, "rb") as source:
             for chunk in plan_chunks:
@@ -22,8 +22,9 @@ class AdriaTransferManager:
                     crypto_key=crypto_key
                 )
                 
+                # Forwarding the unique session_id to color the streaming bytes downstream
                 success = sender.send_with_pipeline(
-                    source, chunk["chunk_filename"], chunk["size"], pipeline_targets
+                    source, chunk["chunk_filename"], chunk["size"], pipeline_targets, session_id
                 )
                 if not success:
                     raise Exception(f"Pipeline replication failed for chunk index {chunk['index']}")

@@ -6,8 +6,8 @@ class SessionManager:
     """Manages local user session, JWT token, and encryption keys."""
 
     def __init__(self, session_file="session.json"):
-        # Store the session file safely in the data directory
-        self.session_file = os.path.join(os.path.dirname(__file__), "..", "..", "data", session_file)
+        home_dir = os.path.expanduser("~")
+        self.session_file = os.path.join(home_dir, ".adriabox", session_file)
         os.makedirs(os.path.dirname(self.session_file), exist_ok=True)
 
     def save_session(self, token, username, crypto_key=None, role=None):
