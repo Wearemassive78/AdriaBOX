@@ -45,6 +45,7 @@ def test_chunk_sender_sends_header_payload_and_accepts_ack():
             "demo.chunk",
             5,
             [{"node_id": "node-b", "host": "storage-b", "tcp_port": 7002}],
+            "1",
         )
 
     header = connection.sendall.call_args_list[0].args[0]
@@ -69,6 +70,7 @@ def test_chunk_sender_returns_false_for_error_ack():
             "demo.chunk",
             4,
             [],
+            "1",
         )
 
     assert result is False

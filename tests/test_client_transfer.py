@@ -55,6 +55,7 @@ def test_upload_file_chunks_sends_each_chunk_to_its_primary_pipeline():
             "demo.bin",
             plan_chunks,
             "crypto-key",
+            "1",
         )
 
     source = source_open()
@@ -68,12 +69,14 @@ def test_upload_file_chunks_sends_each_chunk_to_its_primary_pipeline():
         "42_0_demo.bin.chunk",
         100,
         plan_chunks[0]["pipeline"],
+        "1",
     )
     second_sender.send_with_pipeline.assert_called_once_with(
         source,
         "42_1_demo.bin.chunk",
         50,
         plan_chunks[1]["pipeline"],
+        "1",
     )
     assert uploaded == [
         {
@@ -116,7 +119,7 @@ def test_upload_file_chunks_raises_when_pipeline_replication_fails():
             Exception,
             match="Pipeline replication failed for chunk index 4",
         ):
-            manager.upload_file_chunks("demo.bin", [chunk], "crypto-key")
+            manager.upload_file_chunks("demo.bin", [chunk], "crypto-key", "1")
 
 
 def test_download_file_chunks_falls_back_to_next_replica():

@@ -137,6 +137,7 @@ def test_upload_gets_plan_transfers_chunks_and_completes_metadata():
         "demo.txt",
         plan_chunks,
         "derived-key",
+        "1",
     )
     http_client.complete_upload.assert_called_once_with(
         1,
