@@ -15,7 +15,7 @@ services:
       - adriabox-net
     environment:
       - PYTHONPATH=/app/src
-      - ADRIABOX_STORAGE_NODES=storage1:storage1:7001:127.0.0.1:7001,storage2:storage2:7002:127.0.0.1:7002,storage3:storage3:7003:127.0.0.1:7003,storage4:storage4:7004:127.0.0.1:7004,storage5:storage5:7005:127.0.0.1:7005,storage6:storage6:7006:127.0.0.1:7006,storage7:storage7:7007:127.0.0.1:7007,storage8:storage8:7008:127.0.0.1:7008,storage9:storage9:7009:127.0.0.1:7009,storage10:storage10:7010:127.0.0.1:7010,storage11:storage11:7011:127.0.0.1:7011,storage12:storage12:7012:127.0.0.1:7012
+      - ADRIABOX_STORAGE_NODES=storage1:storage1:7001:storage1:7001,storage2:storage2:7002:storage2:7002,storage3:storage3:7003:storage3:7003,storage4:storage4:7004:storage4:7004,storage5:storage5:7005:storage5:7005,storage6:storage6:7006:storage6:7006,storage7:storage7:7007:storage7:7007,storage8:storage8:7008:storage8:7008,storage9:storage9:7009:storage9:7009,storage10:storage10:7010:storage10:7010,storage11:storage11:7011:storage11:7011,storage12:storage12:7012:storage12:7012
 
   # --- STORAGE CLUSTER NODES (Corrected Flags) ---
 
