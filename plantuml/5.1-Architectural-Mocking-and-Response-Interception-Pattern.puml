@@ -1,0 +1,46 @@
+@startuml plant-5.1
+skinparam monochrome true
+skinparam shadowing false
+skinparam DefaultFontName "Courier"
+
+box "Automated Testing Horizon (Pytest Room)" #LightGray
+actor "Test Runner (pytest -v)" as TR
+participant "test_client_transfer.py" as TS
+end box
+
+box "AdriaBOX Client Architecture" #White
+participant "transfer.py (Module under Test)" as TM
+participant "http_client.py" as HC
+end box
+
+box "Python Isolation Layer (AOP Interception)" #LightYellow
+participant "unittest.mock (@patch)" as MP
+end box
+
+TR -> TS : Execute Isolated Suite
+activate TS
+
+TS -> MP : Inject Interception Filter (@patch('socket.socket'))
+activate MP
+note right of MP: Bypasses host NIC boundaries\nRedirects vectors to memory frames
+
+TS -> TM : upload_file_chunks()
+activate TM
+
+TM -> HC : Get Upload Plan Mapping
+activate HC
+HC --> TM : Return Mocked Topology Plan Matrix
+deactivate HC
+
+TM -> TM : Execute Block Slicing & Ciphering
+
+TM -> MP : connect() / sendall() [Raw Socket Vector]
+MP --> TM : Intercepted: Return Simulated TCP ACK (True)
+
+TM --> TS : Return Completion Verification Checkpoint
+deactivate TM
+
+TS -> TR : Assert PASSED (Horizon Verified in 1.63s)
+deactivate TS
+deactivate MP
+@enduml

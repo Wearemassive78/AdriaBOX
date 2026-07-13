@@ -1,0 +1,47 @@
+@startuml 1.1-architectural-decoupling
+skinparam handwritten false
+skinparam monochrome true
+skinparam packageStyle rect
+skinparam defaultFontName "Arial"
+skinparam shading false
+
+title AdriaBOX - Architectural Plane Decoupling and Infrastructure Boundaries
+
+package "Tenant Space (Simulated User Workspaces)" #White {
+    component [Tenant Client: Max\n(Isolated Python Runtime)] as ClientMax
+    component [Tenant Client: Sam\n(Isolated Python Runtime)] as ClientSam
+}
+
+package "Control Plane (Orchestration Core)" #White {
+    component [Metadata Server\n(Flask REST Framework)] as CentralMaster
+    database "SQLite Backend\n(metadata.db)" as DB
+}
+
+package "Data Plane (Decentralized Worker Fleet)" #White {
+    node "Failure Domain 1" {
+        component [Storage Node 1\n(Daemon Listener)] as SN1
+        database "Partition 1\n(/app/storage/storage1)" as D1
+    }
+    node "Failure Domain 2" {
+        component [Storage Node 2\n(Daemon Listener)] as SN2
+        database "Partition 2\n(/app/storage/storage2)" as D2
+    }
+    node "Failure Domain N" {
+        component [Storage Node N\n(Daemon Listener)] as SNN
+        database "Partition N\n(/app/storage/storageN)" as DN
+    }
+}
+
+ClientMax --> CentralMaster : "Control Path: Request Upload Plan\n(HTTP REST / JWT Auth)"
+ClientSam --> CentralMaster : "Control Path: Request Metadata"
+CentralMaster --> DB : "ACID State Tracking\n(SQL Queries)"
+
+ClientMax ===> SN1 : "Data Path: Direct 4KB Framed Stream\n(Raw TCP Sockets)"
+SN1 ---> SN2 : "Pipeline Replication Chain\n(Cascading Sockets)"
+SN2 ---> SNN : "Pipeline Replication Chain\n(Cascading Sockets)"
+
+SN1 -down-> D1
+SN2 -down-> D2
+SNN -down-> DN
+@enduml
+

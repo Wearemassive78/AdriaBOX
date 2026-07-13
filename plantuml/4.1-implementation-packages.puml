@@ -1,0 +1,45 @@
+@startuml 4.1-implementation-packages
+skinparam handwritten false
+skinparam monochrome true
+skinparam packageStyle rect
+skinparam defaultFontName "Arial"
+skinparam shading false
+
+title AdriaBOX - Technical Implementation Modules and Package Dependencies
+
+package "Tenant Client Workspace (Poetry Env)" #White {
+    component [cli.py (Argparse & Rich Engine)] as CLI
+    component [core.py (Facade Orchestrator)] as Core
+    component [http_client.py (Requests Session)] as HTTP
+    component [transfer.py (Socket Streams)] as Transfer
+    component [session.py (Local JSON State)] as Session
+    component [crypto.py (PyCryptography Engine)] as Crypto
+}
+
+package "Metadata Server Control Plane" #White {
+    component [server.py (Flask HTTP App)] as Server
+    component [manager.py (Business Logic)] as Manager
+    component [db.py (Python Sqlite3 Driver)] as DB
+}
+
+package "Data Plane Worker Nodes" #White {
+    component [node.py (Threading Server)] as Node
+}
+
+package "Common Core Package" #White {
+    component [tcp.py (Struct & Socket Engine)] as TCP
+    component [constants.py (Global Metrics)] as Constants
+}
+
+CLI --> Core
+Core --> HTTP
+Core --> Transfer
+Core --> Session
+Transfer --> Crypto
+
+HTTP ....> Server : "<<HTTP REST API Calls>>"
+Transfer ....> Node : "<<Framed Binary TCP Streaming>>"
+Node --> TCP
+Transfer --> TCP
+TCP --> Constants
+@enduml

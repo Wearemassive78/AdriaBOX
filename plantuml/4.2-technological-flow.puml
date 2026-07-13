@@ -1,0 +1,48 @@
+@startuml 4.2-technological-flow
+skinparam handwritten false
+skinparam monochrome true
+skinparam defaultFontName "Arial"
+skinparam shading false
+
+title AdriaBOX - Python Library Dependencies and Technology Middleware Flow
+
+box "Tenant User Space Pipeline" #White
+participant "http_client.py\n(requests.Session)" as HTTP
+participant "crypto.py\n(PyCryptography Engine)" as Crypto
+end box
+
+box "Metadata Control Plane Services" #White
+participant "server.py\n(Flask Router)" as Server
+participant "manager.py\n(PyJWT Core)" as JWT
+participant "db.py\n(sqlite3 Driver Engine)" as DB
+end box
+
+[-> HTTP: Initiate login handshake
+activate HTTP
+HTTP -> Server: HTTP POST /login (Payload parameters JSON)
+activate Server
+
+Server -> DB: execute select row query via context handler
+activate DB
+note over DB: conn.row_factory = sqlite3.Row\nConverts records to object map contexts
+DB --> Server: yield matching credential structures
+deactivate DB
+
+Server -> Server: verify password hash via Werkzeug\n[pbkdf2:sha256 matching primitives]
+
+Server -> JWT: generate_token(username, scope_role)
+activate JWT
+note over JWT: Encodes token claims using HMAC-SHA256 signature\nSets 24-hour expiration threshold (exp)
+JWT --> Server: return cryptographically signed JWT string
+deactivate JWT
+
+Server --> HTTP: HTTP 200 OK (Deliver JWT token value)
+deactivate Server
+
+HTTP -> Crypto: derive_key(password, salt=username)
+activate Crypto
+note over Crypto: Executes 100,000 PBKDF2HMAC iterations\nOutputs 32-Byte key string for AES-256-CTR
+Crypto --> HTTP: Key derived in local workspace (Zero-Knowledge)
+deactivate Crypto
+deactivate HTTP
+@enduml

@@ -1,0 +1,59 @@
+@startuml plant-5.2
+skinparam monochrome true
+skinparam shadowing false
+skinparam DefaultFontName "Courier"
+
+actor "Tenant User (Max)" as TU
+participant "adria CLI CLI" as CLI
+participant "transfer.py (Data Plane Engine)" as DP
+participant "Metadata Master (metadata-1)" as MM
+
+boundary "Docker Bridge Network" as DN
+
+box "Storage Daemons Topology" #LightBlue
+entity "storage1 (Port 7001)" as S1
+entity "storage2 (Port 7002)" as S2
+end box
+
+== Phase 1: Sudden Cluster Fault Simulation ==
+actor "IT Operator" as OP
+OP -> DN : docker network disconnect (Isolate storage1)
+note right of DN: Simulates total physical hardware loss
+
+== Phase 2: High Availability Data Plane Recovery ==
+TU -> CLI : adria download /512MB.zip -o file_recuperato.zip
+activate CLI
+
+CLI -> MM : GET /files/download-plan (Retrieve Topology Mapping)
+activate MM
+MM --> CLI : Return Plan Matrix [Chunk 0 -> Primary: storage1, Replicas: storage2, storage3]
+deactivate MM
+
+CLI -> DP : download_file_chunks()
+activate DP
+
+DP -> DN : Establish Raw TCP Connection to storage1:7001 (Chunk 0 Primary)
+activate DN
+DN --> DP : Low-Level Exception: Connection Refused / Timeout
+deactivate DN
+
+DP -> CLI : Broadcast Telemetry Warning [Node storage1 unreachable. Trying replica...]
+note over CLI: [Warning] Node storage1 unreachable for chunk 0.\nThreat mitigated, trying replica...
+
+DP -> DN : Fallback Routing Matrix: Connect to secondary mirror (storage2:7002)
+activate DN
+DN -> S2 : Route TCP Stream Request
+activate S2
+S2 --> DN : Stream Encrypted Binary Blocks + ACK
+deactivate S2
+DN --> DP : Pipeline Intact: Receive Bytes Stream
+deactivate DN
+
+DP -> DP : Reassemble Stream & Decrypt CTR Cipher Block
+DP -> CLI : Write Recovered Stream to Workspace
+deactivate DP
+
+CLI --> TU : Successfully downloaded to: file_recuperato.zip
+deactivate CLI
+@enduml
+

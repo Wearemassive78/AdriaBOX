@@ -1,0 +1,35 @@
+@startuml 3.6-admin-user-bifurcation
+skinparam handwritten false
+skinparam monochrome true
+skinparam defaultFontName "Arial"
+skinparam shading false
+
+title Role-Based Query Isolation Matrix for Virtual Filesystem Inspections
+
+actor "Client Session Context\n(Max / Sam / Admin Devil)" as Client
+participant "Metadata Server\n(Flask Control Plane)" as Server
+database "SQLite Database\n(metadata.db)" as DB
+
+Client -> Server : GET /files/list Request (Bearer JWT Token)
+activate Server
+
+note over Server : Extract Identity claims from Token\nEvaluate Context Role Parameter
+
+alt Role == 'user' (Standard Tenant Scope - Max / Sam)
+    Server -> DB : SELECT * FROM files WHERE owner_id = tenant_id;
+    activate DB
+    note over DB : Contextual relational isolation\nNo visibility outside account boundary
+    DB --> Server : Return tenant specific row-set collection
+    deactivate DB
+else Role == 'admin' (System Administrative Scope - Devil)
+    Server -> DB : SELECT * FROM files;
+    activate DB
+    note over DB : Global un-filtered cluster visibility\nTelemetry and capacity audit lookup
+    DB --> Server : Return unrestricted system row-set collection
+    deactivate DB
+end
+
+Server --> Client : Transmit JSON Array & Render Rich Table Layout
+deactivate Server
+@enduml
+

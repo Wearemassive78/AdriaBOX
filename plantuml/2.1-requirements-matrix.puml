@@ -1,0 +1,33 @@
+@startuml 2.1-requirements-matrix
+skinparam handwritten false
+skinparam monochrome true
+skinparam packageStyle rect
+skinparam defaultFontName "Arial"
+skinparam shading false
+
+title AdriaBOX - Requirements Dependency Tree and System Constraints
+
+rectangle "Functional Tier (FR)" {
+    [FR-1\nAuth Isolation] as FR1
+    [FR-2\n64MB Chunking] as FR2
+    [FR-3\nPipeline Replication] as FR3
+    [FR-4\nNamespace Mutation] as FR4
+    [FR-5\nAccount Eviction] as FR5
+}
+
+rectangle "Non-Functional Tier (NFR)" {
+    [NFR-1\nZero-Knowledge Privacy] as NFR1
+    [NFR-2\nSequential Consistency] as NFR2
+    [NFR-3\nLocation Transparency] as NFR3
+}
+
+rectangle "Implementation Constraints (IR)" {
+    [IR-1\nPoetry Ecosystem] as IR1
+}
+
+FR1 <.. NFR1 : "<<enforces>>"
+FR2 <.. NFR2 : "<<coordinates>>"
+FR3 <.. NFR2 : "<<guarantees strong consistency>>"
+FR5 <.. FR4  : "<<triggers cascading purge>>"
+IR1 <.. FR2  : "<<constrains platform context>>"
+@enduml
