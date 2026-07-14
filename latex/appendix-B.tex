@@ -1,0 +1,36 @@
+% --- APPENDIX B: SYSTEM TEARDOWN AND RESET MANUAL ---
+\section{Appendix B: Total System Teardown and Bare-Metal Reset Protocol}
+\label{sec:appendix_b}
+
+To guarantee absolute idempotency during iterative infrastructure evaluations, a structural mechanism to discard the existing deployment and revert the host machine to a pristine bare-metal state is mandatory. This appendix outlines the destructive teardown manual engineered to purge volatile runtime containers, network allocation sockets, persistent virtual volumes, and localized source trees from the host shell environment.
+
+\subsection{Destructive Sequence Invariants}
+Executing an un-ordered asset deletion under Docker introduces execution deadlocks due to filesystem layer locking and interface socket tracking dependencies. To achieve an instantaneous, clean reset without operating system fragmentation, the removal sequence must strictly adhere to the following technological dependency hierarchy:
+\begin{enumerate}
+    \item \textbf{Container Layout Cessation:} All active processes running inside the 12 virtual storage units and the metadata master must be terminated to release read/write file handle locks on the volume mounts.
+    \item \textbf{Data Plane Volumetric Purging:} Physical data blocks (such as the 64~MB segmented binary chunks) and the centralized SQLite infrastructure database must be completely erased by pruning the persistent virtual storage hardware pools.
+    \item \textbf{Network Isolation De-allocation:} Virtual layer-2 bridge subnets (\texttt{172.18.0.0/16}) must be unmapped to release host networking subsystem constraints and avoid internal interface collisions upon subsequent restarts.
+    \item \textbf{Code Base Eviction:} Finally, the root repository workspace is purged from the user's home directory partition to destroy local state configurations and tracking errors.
+\end{enumerate}
+
+\subsection{Atomic Teardown Execution Script}
+The system operator executes the sequence on the host terminal using the atomic, step-by-step commands documented below:
+
+\begin{lstlisting}[language=bash, basicstyle=\small\ttfamily, frame=single, keepspaces=true, columns=flexible, showspaces=false, showstringspaces=false, breaklines=true]
+# Step 1: Terminate the container grid and remove compiled runtime images
+cd ~/AdriaBOX && sudo docker compose down -v --rmi all
+
+# Step 2: Forcefully remove any orphan container processes remaining in the background
+sudo docker rm -f $(sudo docker ps -aq) 2>/dev/null
+
+# Step 3: Purge the persistent virtual storage volume layers to scrub database blocks
+sudo docker volume prune -f
+
+# Step 4: De-allocate the virtual bridge network interfaces and routing subnets
+sudo docker network prune -f
+
+# Step 5: Evict the root project repository directory and raw test assets from disk
+cd ~ && sudo rm -rf ~/AdriaBOX
+\end{lstlisting}
+
+This teardown routing sequence completes the system automation framework. By wiping out all shared network layers and data blocks, it guarantees that any subsequent initialization using the platform's automation framework will start from a reliable, pristine zero-state baseline.

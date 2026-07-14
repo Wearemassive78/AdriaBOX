@@ -1,0 +1,119 @@
+% --- APPENDIX A: VERSION CONTROL AND SANITIZATION MATRIX ---
+\section{Appendix A: Repository Sanitization and State Persistence Management}
+\label{sec:appendix_a}
+
+During the lifecycle of a decentralized, containerized platform, enforcing a strict boundary between version-controlled source assets and dynamic runtime states is paramount. This appendix documents the core architectural sanitization issues identified during the development of AdriaBOX, focusing on state leakage and environmental contamination. It also provides the production-grade \texttt{.gitignore} framework developed to guarantee deterministic deployments.
+
+\subsection{Architectural Contaminations and Dynamic Leakage Issues}
+Three major configuration vulnerabilities were identified during the transition from a manual bare-metal implementation to a multi-container isolated virtualization layer:
+
+\begin{enumerate}
+    \item \textbf{Database State Contamination (The Double-Devil Paradox):} 
+    By default, an unconfigured version control environment tracking SQLite database binaries (\texttt{metadata.db}) inevitably serializes dynamic records (such as active token sessions and pre-registered tenants) directly into the public repository. 
+    
+    When a developer pulls the repository onto an unconfigured workspace, local database initializations are bypassed. The system instead loads dirty, stale, or privileged administrative profiles (such as the \texttt{devil} or \texttt{max} user accounts created in previous validation cycles), leading to silent state pollution and privilege boundary failure.
+    
+    \item \textbf{High-Volume Storage Volume Bloat:} 
+    Local volume mounts mapping isolated storage node partitions (\texttt{storage\_data/nodeX/}) generate physical chunk fragments on the host system filesystem. For example, uploading a single 512~MB file splits the binary into 8 chunks of 64~MB each. 
+    
+    Allowing Git to index these temporary segments results in immediate repository bloat, dramatically slowing down download speeds and introducing significant data plane pollution.
+    
+    \item \textbf{Cryptographic Key Leakage:} 
+    Generating high-entropy JWT boundary secrets (such as the 256-bit key derived via OpenSSL) directly inside local files presents a severe threat model. If these environments are not explicitly isolated, private deployment secrets will be committed, causing immediate identity claims compromises across all system endpoints.
+\end{enumerate}
+
+\subsection{Deterministic Sanitization Framework: Gitignore Matrix}
+To systematically eliminate these vulnerabilities, a custom sanitization blueprint was implemented. It strictly enforces the exclusion of dynamic states while protecting persistent initial database frames (\texttt{.gitkeep}) and immutable documentation assets. 
+
+The complete, production-grade version-control configuration is presented below:
+
+\begin{lstlisting}[language=bash, basicstyle=\small\ttfamily, frame=single, keepspaces=true, columns=flexible, showspaces=false, showstringspaces=false, breaklines=true]
+# ====================================================================
+# AdriaBOX Official Gitignore Layout
+# ====================================================================
+
+# Python bytecode and runtime cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# Testing, code coverage, and quality-tool artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.tox/
+.nox/
+
+# Virtual environments and package driver isolation
+.venv/
+venv/
+env/
+ENV/
+.poetry/
+.cache/
+
+# Project distribution and packaging build outputs
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Critical local security boundaries and environments
+.env
+.env.*
+!.env.example
+.adriabox_session
+session.json
+
+# Platform runtime log frameworks and process identifiers
+*.log
+*.pid
+*.out
+server.out.log
+server.err.log
+server.error.log
+
+# Dynamic persistent databases and runtime storage engines
+# Explicitly blocking database persistence to prevent state contamination
+*.db
+*.sqlite
+*.sqlite3
+data/
+src/metadata_server/data/*
+!src/metadata_server/data/.gitkeep
+
+# Local containerized storage node volumes and block segments
+storage_data/
+storage_nodes/
+src/storage_node/data/*
+!src/storage_node/data/my_first_file.txt
+
+# Volumetric file artifacts and high-volume test archives
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+*.iso
+512MB.zip
+file_example.avi
+
+# System workspace layouts and local editor noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.project
+.settings/
+\end{lstlisting}
+
+This configuration preserves zero-trust security invariants across the entire development team. It ensures that any fresh checkout initializes on a clean, empty state, forcing the user registration and JWT authorization pipelines to build deterministically from scratch.

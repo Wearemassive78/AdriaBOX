@@ -1,0 +1,106 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+
+% Layout, margini e bilanciamento tipografico
+\usepackage[margin=1.1in,a4paper]{geometry}
+\usepackage{microtype}
+
+% Pacchetti per tabelle professionali ed estese
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+
+% Gestione grafica, formule matematiche e annotazioni di codice
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{listings}
+\usepackage{xcolor}
+
+% Gestione avanzata dei riferimenti incrociati e collegamenti ipertestuali
+\usepackage{hyperref}
+\usepackage{cleveref}
+
+% Configurazione dei collegamenti ipertestuali
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=cyan,
+    pdftitle={AdriaBOX: Final Report},
+    pdfpagemode=FullScreen,
+}
+
+% Configurazione per eventuale rendering di testo formattato o pseudocodice
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    backgroundcolor=\color{gray!5},
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black}
+}
+
+% Dati del Progetto e degli Autori
+\title{
+    \vspace{-2cm}
+    \textbf{\huge AdriaBOX}\\
+    \vspace{0.5cm}
+    \large A Decentralized Storage Matrix with Synchronous Pipeline Replication and Zero-Knowledge Encryption\\
+    \vspace{0.3cm}
+    \large\textit{Final Report for the Distributed Systems Course}
+}
+
+\author{
+    \textbf{Sajmir Buzi} \\
+    \texttt{sajmir.buzi@studio.unibo.it}
+    \and
+    \textbf{Massimiliano Pupillo} \\
+    \texttt{massimiliano.pupillo@studio.unibo.it}
+}
+
+\date{\textbf{Academic Year 2025/2026}}
+
+\usepackage{setspace}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This report details the comprehensive architectural design, theoretical constraints, and operational mechanisms of AdriaBOX, a resilient, decentralized object storage system engineered over a multi-tenant cluster environment. AdriaBOX natively addresses the core challenges of distributed computing by separating high-performance binary transport protocol engines from global metadata orchestration. By employing a customized application-layer framed TCP streaming layer alongside a synchronous pipeline replication cascade, the system isolates fault domains, prevents resource starvation via strict boundary memory footprinting, and implements Zero-Knowledge client-side encryption. Crucially, to validate system behavior under realistic execution stresses, a multi-containerized emulation workspace is leveraged. This environment allows the simulation of concurrent, fully isolated tenant workspaces interacting across a virtualized network plane, proving that horizontal capacity scaling and hardware-level fault tolerance can be sustained without compromising strong sequential data consistency under severe network disruption.
+\end{abstract}
+
+\vspace{1cm}
+\noindent\rule{\textwidth}{0.5pt}
+\section*{Disclaimer}
+During the preparation of this work, the authors used AI tools like Copilot and Gemini and automated services to assist with structural code optimization, debugging session analysis, and LaTeX typographical documentation layout drafting. After using these tools, the authors thoroughly reviewed, refactored, and edited the generated content as needed. The authors take full and undivided responsibility for the architectural correctness, scientific rigor, and technical integrity of the content published within this final report and the accompanying software artifact.
+\noindent\rule{\textwidth}{0.5pt}
+
+\clearpage
+
+% Indice dei Contenuti
+\tableofcontents
+\clearpage
+
+% Struttura modulare dei capitoli
+\include{01-concept}
+\include{02-requirements}
+\include{03-design}
+\include{04-implementation}
+\include{05-validation}
+\include{06-deployment}
+\include{07-user-guide}
+\include{08-future-works}
+\include{09-chapter_self_evaluation}
+
+% Attivazione della modalità Appendice
+\appendix
+\include{appendix-A}
+\include{appendix-B}
+\include{references}
+
+\end{document}
+

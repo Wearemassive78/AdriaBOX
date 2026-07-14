@@ -1,0 +1,125 @@
+% --- CHAPTER 8: FUTURE WORKS AND ARCHITECTURAL EXTENSIONS ---
+\section{Future Works, Potential Extensions, and Architectural Optimizations}
+\label{sec:future_works}
+
+This chapter outlines the strategic evolutionary trajectory of the AdriaBOX distributed computing platform. While the current implementation satisfies the architectural invariants defined in the technical specification, system scaling boundaries highlight two core areas for industrial enhancement: the translation of the terminal-bound client into a cross-platform Graphical User Interface (GUI), and the elimination of the control plane Single Point of Failure (SPOF) through a distributed, Raft-driven consensus metadata cluster layout.
+
+\subsection{Cross-Platform Graphical User Interface (GUI) Evolution}
+The current command-line interface, managed by the \texttt{AdriaCLI} routing controller, relies on terminal input parsing and the \texttt{Rich} library to render synchronous execution maps. Although this layout provides low overhead and high diagnostic transparency, expanding deployment to standard desktop workstation tenants requires abstraction over raw shell executions.
+
+\subsubsection{Architectural Interface Decoupling Paradigm}
+The migration from a text-based CLI to a desktop application does not necessitate rewriting core networking or cryptographic layers. The system architecture enforces a clean separation of concerns, allowing the existing \texttt{AdriaClient} module to be decoupled from \texttt{client.ui} wrappers and integrated into an asynchronous desktop runtime ecosystem. 
+
+For this evolution, a \textbf{PySide6 / PyQt6} framework layout is proposed. This approach maintains native compliance with the Python stack and allows developers to bind core network events to graphical components using Qt's asynchronous signal-and-slot mechanics. The interface layer maps terminal directives to explicit graphical patterns:
+\begin{enumerate}
+    \item \textbf{Asynchronous Drag-and-Drop Ingress:} Dropping a file into the workspace interface triggers a background worker thread that invokes the \texttt{client.upload()} method, passing the absolute local disk path as an argument.
+    \item \textbf{Multi-Segment Progress Monitoring:} The terminal-bound chunk distribution table is replaced by a progressive grid display. This component samples chunk upload confirmations in real time, updating individual status markers as data plane operations execute across storage nodes.
+    \item \textbf{Isolated Token Caching Configuration:} The local session configuration (\texttt{session.json}) is moved into OS-specific secure storage layers, such as Keyring for Linux, Keychain for macOS, or Credential Manager for Windows. This setup ensures that authentication tokens are encrypted at rest on client host devices.
+\end{enumerate}
+
+\subsection{Fault-Tolerant Control Plane: Distributed Metadata Clustering via Raft Consensus}
+As verified during live cluster handshakes, the current control plane relies on a single metadata server hosting a local SQLite database instance. This layout constitutes a classic \textbf{Single Point of Failure (SPOF)}. If the host machine running the Flask master router experiences a hardware fault, memory corruption, or network disconnection, the entire distributed platform is paralyzed. Under this condition, tenants cannot authenticate, map logical paths, or reconstruct file slices, even if all 12 backend storage data nodes remain fully operational.
+
+To scale the infrastructure to production-grade availability, the centralized master architecture must be replaced with a distributed \textbf{State Machine Replication (SMR)} system driven by an active consensus protocol.
+
+\subsubsection{Mathematical Formulation of Consensus and Quorum Bounds}
+To eliminate centralized failures, the system deploys an odd number of independent metadata master servers denoted by $N_{\text{master}}$, where $N_{\text{master}} \ge 3$. Every state mutation request---such as tenant registration, directory generation, or chunk mapping allocation---must be committed across an absolute majority of control nodes before being marked as authoritative. 
+
+The mathematical lower bound required to reach operational consensus, known as the \textbf{Quorum} ($Q$), is formulated as:
+$$Q = \left\lfloor \frac{N_{\text{master}}}{2} \right\rfloor + 1$$
+
+This formulation establishes the theoretical fault-tolerance limit of the control plane. The maximum number of concurrently compromised or crashed control nodes that the system can sustain without service interruption ($F$) is bounded by:
+$$F = \left\lfloor \frac{N_{\text{master}} - 1}{2} \right\rfloor$$
+
+Applying these equations to standard deployment scales yields the strict structural boundaries mapped in Table~\ref{tab:quorum_bounds}.
+
+\begin{table}[htbp]
+\small
+\centering
+\caption{Control Plane Cluster Scale, Quorum Thresholds, and Fault Tolerance Parameters}
+\label{tab:quorum_bounds}
+\vspace{2mm}
+\begin{tabular}{|c|c|c|l|}
+\hline
+\textbf{Total Masters ($N_{\text{master}}$)} & \textbf{Quorum Bound ($Q$)} & \textbf{Max Faults ($F$)} & \textbf{Operational Survivability Level} \\ \hline
+1 & 1 & 0 & Non-redundant baseline baseline. \\ \hline
+3 & 2 & 1 & Resilient to a single node crash. \\ \hline
+5 & 3 & 2 & Sustains two simultaneous failures. \\ \hline
+7 & 4 & 3 & Enforces consensus across deep network splits. \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Theoretical Mechanics of the Raft Consensus Protocol}
+To synchronize database state mutations deterministically across the control plane layout without incurring distributed race conditions, the system implements the Raft Consensus Protocol. The control layout partitions execution states into three explicit, mutually exclusive roles: \textbf{Leader}, \textbf{Follower}, and \textbf{Candidate}.
+
+The operational lifetime of a Raft-driven control cluster is divided into independent, sequential blocks of time called \textbf{Terms}. Each term is identified by an incremental integer token and initializes with a dedicated leader election phase. The state orchestration sequence executes across three major operational phases:
+
+\paragraph{1. Randomized Term Leader Election Phase:}
+\begin{itemize}
+    \item Under standard cluster status, the elected Leader transmits periodic heartbeats (\texttt{AppendEntries} RPCs containing empty payload envelopes) to all Follower nodes to suppress election triggers.
+    \item If a Follower node stops receiving heartbeats within a randomized window called the \textbf{Election Timeout} (typically bounded between $150\text{ ms}$ and $300\text{ ms}$), it assumes the Leader has crashed.
+    \item The Follower increments its current term counter, updates its operational state to Candidate, votes for itself, and broadcasts a \texttt{RequestVote} RPC to all other control elements in the topology.
+    \item If a candidate node successfully secures affirmative votes from a strict majority ($Q$) of nodes within the term, it transitions to Leader and assumes authoritative control over the cluster ingress interfaces.
+\end{itemize}
+
+\paragraph{2. Log Replication and Distributed Commit Phase:}
+Once a Leader is established, it processes all inbound state modification requests from tenant clients. The coordination of a data write event, such as an account registration command, follows a strict atomic progression:
+\begin{enumerate}
+    \item The tenant sends an operation request (e.g., \texttt{REGISTER max}) to the Leader node ingress interface.
+    \item The Leader appends the command to its local append-only transaction ledger as an uncommitted state entry.
+    \item The Leader broadcasts the log entry to all Follower nodes via concurrent \texttt{AppendEntries} RPC interactions.
+    \item Each Follower receives the entry, verifies log continuity parameters against its term history, appends the entry to its local ledger, and returns an affirmative acknowledgment token to the Leader.
+    \item When the Leader collects acknowledgments matching or exceeding the Quorum threshold ($Q$), it applies the log entry to its local database instance (marking the entry as \textbf{Committed}) and returns a success confirmation token to the client.
+    \item During subsequent heartbeat intervals, the Leader instructs the remaining Followers to commit the entry to their respective state machines, guaranteeing absolute state convergence across the cluster.
+\end{enumerate}
+
+\subsubsection{Advanced Rigorous Safety Invariants}
+To guarantee that the replicated state machines do not diverge under hostile asymmetric network partitions, Raft enforces five core safety invariants that would be mathematically verified within the AdriaBOX control framework:
+\begin{itemize}
+    \item \textbf{Election Safety:} At most one leader can be elected per term. This prevents conflicting coordinate paths from being broadcast to tenants simultaneously.
+    \item \textbf{Leader Append-Only:} A leader never overwrites or truncates its own log entries; it only appends new operational blocks. This preserves the historical logging trace of metadata states.
+    \item \textbf{Log Matching Safety:} If two distinct server logs contain an entry with the same index and term, then they are completely identical up to the given index.
+    \item \textbf{Leader Completeness:} If a log entry is committed in a given term, that entry will be present in the logs of the leaders for all higher-numbered terms. This invariant ensures that newly elected metadata masters do not lose historical asset configurations.
+    \textbf{State Machine Safety:} If a server has applied a log entry at a given index to its state machine, no other server will ever apply a different log entry for the same index.
+\end{itemize}
+
+\subsubsection{Dynamic Membership Transitions and Split-Brain Mitigation}
+A significant vulnerability in expanding consensus clusters occurs during membership modifications (e.g., scaling from 3 to 5 master nodes). If servers change their configurations independently, the cluster risks entering a split-brain state, where two overlapping quorums elect two distinct leaders simultaneously.
+
+To mitigate this, the proposed architecture utilizes a \textbf{Joint Consensus} transition protocol. When a cluster configuration shifts from an old setup ($C_{\text{old}}$) to a new setup ($C_{\text{new}}$), the configuration entry itself is written as a log command. During the transition phase, operations require independent majorities from both configurations simultaneously:
+$$Q_{\text{joint}} = Q_{C_{\text{old}}} \cap Q_{C_{\text{new}}}$$
+
+Once the joint consensus log is committed across both quorums, the leader safely writes the final $C_{\text{new}}$ descriptor, terminating the transition vector and ensuring that configuration shifts are fully deterministic.
+
+\subsubsection{Log Compaction, Truncation, and Memory Management}
+In a production-grade cloud storage system, an append-only log cannot grow indefinitely without exhausting the memory resources of the control plane host machines. Every single directory insertion or transaction appends bytes to the ledger.
+
+To maintain structural optimization, the architecture implements asynchronous **Snapshotting Mechanics**. When the local log file crosses a configured byte threshold, the metadata master checkpoints its current database state into a compact snapshot image, discarding the underlying historical log sequence up to that index. The snapshot stores:
+\begin{enumerate}
+    \item The state machine data structure (the complete metadata hierarchy at that moment).
+    \item The \textbf{Last Included Index}, representing the final entry index absorbed by the snapshot.
+    \item The \textbf{Last Included Term}, fixing the term identifier of that final entry.
+\end{enumerate}
+If a lagged or newly initialized follower node requires synchronization, the leader bypasses structural incremental \texttt{AppendEntries} and transmits the compiled snapshot directly via an \texttt{InstallSnapshot} RPC, optimizing network resource expenditure across the control interfaces.
+
+\subsubsection{Transitioning from SQLite to Replicated Distributed Databases}
+To implement Raft state machines efficiently on the backend, the single-file SQLite storage layout must be replaced by an integrated, embeddable key-value store or a consensus-aware database engine. Two primary implementations are viable for this transition:
+
+\paragraph{Option A: Embeddable Log-Structured Merge-Tree Engine (RocksDB)}
+In this configuration, each master node runs an instance of \textbf{RocksDB} embedded directly within the control application process space. When Raft commits a log entry, the command is serialized and written to RocksDB using atomic write batches. This approach eliminates external database process context switches and ensures high write throughput by leveraging log-structured merge-tree layout dynamics.
+
+\paragraph{Option B: Distributed SQL Layer (rqlite Framework)}
+Alternatively, the data layout can migrate directly to \textbf{rqlite}, an open-source distributed database that encapsulates an SQLite engine within a Raft consensus framework. This option preserves the relational SQL schema definitions used in the current AdriaBOX implementation while automatically handling cluster membership changes, leader elections, and transactional log replication across control nodes.
+
+\subsubsection{Ephemeral Metadata Retention: Soft-Deletion and Automated Trash Bin Garbage Collection}
+The current implementation of the asset eradication routine (\texttt{adria rm}) executes a synchronous, destructive purge across both the metadata engine and the distributed data nodes. While the client-side terminal mitigates accidental input via an interactive confirmation warning prompt, this layout risks irreversible data loss if authentication tokens are compromised or if an operator forces execution flags.
+
+To enhance structural data safety, a \textbf{Soft-Deletion Framework} is proposed to replace immediate purging with an ephemeral trash bin retention layer. The architecture under this paradigm shifts across distinct execution phases:
+\begin{enumerate}
+    \item \textbf{Metadata State Mutation (Logical Flagging):} When a tenant issues a delete directive, the master router intercepts the operation without emitting un-linking commands to the storage nodes. Instead, the entry status inside the SQL schema is updated with an active logical flag (\texttt{is\_deleted = TRUE}) and assigned a high-precision epoch timestamp metadata attribute (\texttt{deleted\_at}).
+    \item \textbf{Isolated Path Relocation:} The logical key reference of the file inside the object namespace is mutated, prepending a hidden system prefix (e.g., \texttt{/trash/tenant\_id/...}). This action immediately evacuates the asset from the tenant's primary workspace directory tree, rendering it invisible during standard list operations while preserving chunk integrity.
+    \item \textbf{Asynchronous 30-Day Chronological Purging:} Rather than locking worker threads with immediate physical I/O operations, a lightweight background daemon process---orchestrated via a dedicated cron schedule or a Redis celery worker queue---is deployed on the control plane. This background task executes a daily database sweep using the following temporal condition constraint query:
+    $$\Delta t = t_{\text{current}} - t_{\text{deletion}} \ge 30 \text{ days}$$
+    \item \textbf{Deferred Physical Block Scavenging:} When an entry satisfies the 30-day age limit ($\Delta t$), the master marks the log state as permanently scrubbed. It then triggers an asynchronous, parallelized metadata cleanup routine across the worker nodes, dropping the physical 64~MB chunk segments from disk storage and reclaiming cluster storage capacity without blocking real-time user traffic.
+\end{enumerate}
+This decoupled lifecycle approach balances operational resilience for the end-tenant with optimized, predictable storage reclamation intervals for the infrastructure cluster.
