@@ -1,10 +1,16 @@
-# Python cache and bytecode
+# ====================================================================
+# AdriaBOX Official Gitignore Layout
+# ====================================================================
+
+# Python bytecode and runtime cache
 __pycache__/
 *.py[cod]
 *$py.class
 *.pyc
+*.pyo
+*.pyd
 
-# Test, coverage and quality-tool artifacts
+# Testing, code coverage, and quality-tool artifacts
 .pytest_cache/
 .coverage
 .coverage.*
@@ -16,40 +22,65 @@ htmlcov/
 .tox/
 .nox/
 
-# Virtual environments
+# Virtual environments and package driver isolation
 .venv/
 venv/
 env/
 ENV/
+.poetry/
+.cache/
 
-# Python packaging/build output
+# Project distribution and packaging build outputs
 build/
 dist/
 *.egg-info/
+*.egg
 
-# Local environment and secrets
+# Critical local security boundaries and environments
 .env
 .env.*
 !.env.example
 .adriabox_session
+session.json
 
-# Local runtime files and logs
+# Platform runtime log frameworks and process identifiers
 *.log
 *.pid
+*.out
 server.out.log
 server.err.log
 server.error.log
 
-# Local databases.
-# Keep the canonical project database used by the tests/examples.
-data/
+# Dynamic persistent databases and runtime storage engines
+# Explicitly blocking database persistence to prevent state contamination
 *.db
-!data/metadata.db
+*.sqlite
+*.sqlite3
+data/
+src/metadata_server/data/*
+!src/metadata_server/data/.gitkeep
 
-# Local editor and OS noise
+# Local containerized storage node volumes and block segments
+storage_data/
+storage_nodes/
+src/storage_node/data/*
+!src/storage_node/data/my_first_file.txt
+
+# Volumetric file artifacts and high-volume test archives
+*.zip
+*.tar.gz
+*.tgz
+*.rar
+*.iso
+512MB.zip
+file_example.avi
+
+# System workspace layouts and local editor noise
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-*.zip
-
+*.swp
+*.swo
+.project
+.settings/
