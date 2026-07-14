@@ -232,21 +232,3 @@ The structural interaction boundaries detailing exactly where the Transport-Laye
     \caption{AdriaBOX Dual-Layer Cryptographic Boundary and Processing Horizons Map.}
     \label{fig:cryptographic_boundaries}
 \end{figure}
-% --- CHAPTER 3: DESIGN ---
-All administrative, authentication, and metadata orchestration pathways operating over the Control Plane (directed from the Client CLI to the Flask Metadata Server) utilize standard \textbf{Transport-Layer Security (TLS/HTTPS)} in a production environment[cite: 1668]. This mechanism encapsulates standard HTTP REST JSON structures inside an asymmetric/symmetric handshake envelope (Layer 5 of the OSI stack)[cite: 1669]. While HTTPS successfully mitigates middleman eavesdropping, packet tampering, and session hijacking during network transit, it terminates at the edge of the Control Plane: the Metadata Server decrypts the incoming TLS packet to evaluate and execute the business logic[cite: 1670]. Consequently, transport-layer encryption alone is mathematically insufficient to guarantee complete data privacy inside a multi-tenant storage cluster[cite: 1671].
-￼
-\subsubsection{Data Plane Isolation: Client-Side Zero-Knowledge Encryption}
-To ensure that files remain completely unreadable even to malicious system administrators or compromised storage hardware, the Data Plane enforces an end-to-end symmetric encryption model executing exclusively within the local host user-space boundary[cite: 1672].
-\begin{enumerate}
-    \item \textbf{Deterministic Key Derivation (PBKDF2HMAC):} When a user triggers an execution session via the CLI, the local runtime intercepts the plain password[cite: 1673]. To prevent cryptographic key collision attacks—where distinct users utilizing identical weak passwords yield equivalent keys—the system feeds the password into the PBKDF2HMAC algorithm[cite: 1674]. The unique system \texttt{username} is systematically injected as a deterministic cryptographic \textit{salt}, stretched over exactly 100,000 computation iterations using the SHA-256 hashing primitive[cite: 1675]. The resulting 256-bit (32-byte) key is safely isolated inside the client memory page structures[cite: 1676].
-    \item \textbf{In-Place Stream Ciphering (AES-256-CTR):} Prior to logical block striping and socket broadcasting, data flows through the local cryptographic engine[cite: 1677]. The system instantiates an Advanced Encryption Standard (AES) block cipher operating in Counter (CTR) mode[cite: 1678]. CTR mode virtualizes the block cipher into a continuous stream cipher by computing an invariant keystream bit-by-bit, eliminating the architectural requirement for memory padding overhead[cite: 1679]. To defeat cryptographic patterns, a unique 16-byte cryptographic Nonce (Initialization Vector) is calculated for each individual chunk by running a SHA-256 digest over the target chunk filename[cite: 1680].
-\end{enumerate}
-￼
-The structural interaction boundaries detailing exactly where the Transport-Layer Security (HTTPS) and the local Zero-Knowledge Engine (\texttt{crypto.py}) operate across the network plane are formalized in \Cref{fig:3.9-cryptographic-boundaries}[cite: 1681].
-￼
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=\textwidth]{plantuml/3.9-cryptographic-boundaries.png}
-    \caption{AdriaBOX Dual-Layer Cryptographic Boundary and Processing Horizons Map.}
-    \label{fig:3.9-cryptographic-boundaries}
-\end{figure}
