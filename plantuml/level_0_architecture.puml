@@ -1,0 +1,40 @@
+@startuml AdriaBOX_Level_0
+!theme plain
+skinparam componentStyle uml2
+
+title AdriaBOX - Component Diagram (Zoom Level 0)
+
+package "Client Environment" {
+    [Client CLI] as client
+}
+
+package "AdriaBOX Matrix (Docker Environment)" {
+    
+    node "Metadata Server (Controller)" {
+        [API & Load Balancer] as controller
+        database "SQLite\n(File Index)" as db
+    }
+
+    node "Storage Node 1" {
+        [Socket Listener 1] as sn1
+        folder "Docker Volume 1\n(Binary Data)" as vol1
+    }
+
+    node "Storage Node 2...N" {
+        [Socket Listener N] as snN
+        folder "Docker Volume N\n(Binary Data)" as volN
+    }
+}
+
+' Relationships and communications
+client <--> controller : REST API (JSON)\n1. Requests permissions & nodes
+controller <--> db : Reads/Writes metadata
+
+client <==> sn1 : TCP Sockets (Binary)\n2. Sends/Receives chunks
+client <==> snN : TCP Sockets (Binary)
+
+sn1 --> vol1 : Physical Disk I/O
+snN --> volN : Physical Disk I/O
+
+@enduml
+
